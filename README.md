@@ -91,12 +91,9 @@ Turn a sequence of snippets into a presentation. Useful for classrooms, team mee
 
 Generate mind maps from Markdown. Fast, intuitive, and ideal for structuring and visualizing ideas.
 
-### Integrations
+### JSON Visualizer
 
-Extend your workflow with:
-
-* [VS Code Extension](https://marketplace.visualstudio.com/items?itemName=AntonReshetov.masscode-assistant): zen mode snippet search, instant insertion, and save selected code as snippets.
-* [Raycast Extension](https://www.raycast.com/antonreshetov/masscode): quick snippet access directly from Raycast.
+Visualize and explore your JSON data with an interactive graph view. Perfect for quickly inspecting complex responses, APIs, or configuration files.
 
 ### Beautiful Screenshots
 
@@ -109,6 +106,13 @@ Handy built-in utilities for everyday dev tasks:
 * **Text Tools**: Case Converter, Slug Generator, URL Parser
 * **Crypto & Security**: Hash/HMAC, Password Generator, UUID
 * **Encoders/Decoders**: URL, Base64, JSON ⇄ TOML/XML/YAML, Text ⇄ ASCII/Binary/Unicode, Color Converter
+
+### Integrations
+
+Extend your workflow with:
+
+* [VS Code Extension](https://marketplace.visualstudio.com/items?itemName=AntonReshetov.masscode-assistant): zen mode snippet search, instant insertion, and save selected code as snippets.
+* [Raycast Extension](https://www.raycast.com/antonreshetov/masscode): quick snippet access directly from Raycast.
 
 ## Overview
 
@@ -155,8 +159,17 @@ This will start the application with hot reloading.
 
 ## Troubleshooting
 
-If you encounter the error message "massCode" is damaged and can't be opened. You should move it to the Trash while installing software on macOS, it may be due to security settings restrictions in macOS. To solve this problem, please try the following command in Terminal:
+### macOS
 
+If you encounter the error message "massCode" is damaged and can't be opened. You should move it to the Trash while installing software on macOS, it may be due to security settings restrictions in macOS.
+
+**Option 1: System Settings (macOS 13+)**
+1. Open **System Settings** → **Privacy & Security**
+2. Scroll down to find "massCode" in the list of blocked applications
+3. Click **Allow Anyway** or **Open Anyway**
+4. You may need to enter your administrator password
+
+**Option 2: Terminal command**
 ```bash
 sudo xattr -r -d com.apple.quarantine /Applications/massCode.app
 ```

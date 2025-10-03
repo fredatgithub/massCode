@@ -29,6 +29,7 @@ const {
   isEmpty,
   selectedSnippetIds,
   isAvailableToCodePreview,
+  searchQuery,
 } = useSnippets()
 const {
   isShowMarkdown,
@@ -37,12 +38,14 @@ const {
   isShowCodeImage,
   isShowMarkdownPresentation,
   isFocusedSearch,
+  isShowJsonVisualizer,
 } = useApp()
 
 const { addToUpdateContentQueue } = useSnippetUpdate()
 
 const isDark = useDark()
 let editor: CodeMirror.Editor | null = null
+let currentSearchOverlay: any = null
 
 const isProgrammaticChange = ref(false)
 
@@ -75,6 +78,7 @@ const isShowEditor = computed(() => {
     && !isShowMindmap.value
     && !isShowCodeImage.value
     && !isShowMarkdownPresentation.value
+    && !isShowJsonVisualizer.value
     && !isEmpty.value
     && selectedSnippet.value !== undefined
   )
@@ -84,6 +88,10 @@ watch(selectedSnippetContent, () => {
   if (selectedSnippetContent.value?.language !== 'markdown') {
     isShowMarkdown.value = false
     isShowMindmap.value = false
+  }
+
+  if (selectedSnippetContent.value?.language !== 'json') {
+    isShowJsonVisualizer.value = false
   }
 
   if (!isAvailableToCodePreview.value) {
@@ -208,6 +216,11 @@ async function init() {
   watch(selectedSnippetContent, (v) => {
     nextTick(() => {
       setValue(v?.value || '')
+      nextTick(() => {
+        if (searchQuery.value) {
+          updateSearchOverlay()
+        }
+      })
     })
   })
 
@@ -236,6 +249,12 @@ async function init() {
       })
     },
   )
+
+  watch(searchQuery, () => {
+    nextTick(() => {
+      updateSearchOverlay()
+    })
+  })
 }
 
 function setValue(value: string, programmatic = true) {
@@ -328,6 +347,64 @@ function onSplitterLayout() {
   editor?.refresh()
 }
 
+function createSearchOverlay(query: string) {
+  if (!query)
+    return null
+
+  let regexp: RegExp
+
+  try {
+    regexp = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+  }
+  catch {
+    return null
+  }
+
+  return {
+    token: (stream: any) => {
+      regexp.lastIndex = stream.pos
+      const match = regexp.exec(stream.string)
+      if (match && match.index === stream.pos) {
+        stream.pos += match[0].length
+        return 'searching'
+      }
+      else if (match) {
+        stream.pos = match.index
+      }
+      else {
+        stream.skipToEnd()
+      }
+    },
+  }
+}
+
+function updateSearchOverlay() {
+  if (!editor)
+    return
+
+  if (currentSearchOverlay) {
+    editor.removeOverlay(currentSearchOverlay)
+    currentSearchOverlay = null
+  }
+
+  if (searchQuery.value) {
+    currentSearchOverlay = createSearchOverlay(searchQuery.value)
+    if (currentSearchOverlay) {
+      editor.addOverlay(currentSearchOverlay)
+
+      // Scroll to the first match
+      const cursor = editor.getSearchCursor(
+        searchQuery.value,
+        { line: 0, ch: 0 },
+        true,
+      )
+      if (cursor.findNext()) {
+        editor.scrollIntoView(cursor.from(), 50)
+      }
+    }
+  }
+}
+
 onMounted(() => {
   init()
 })
@@ -362,6 +439,7 @@ onMounted(() => {
     <EditorFooter v-if="isShowEditor" />
     <EditorMindmap v-if="isShowMindmap" />
     <EditorCodeImage v-if="isShowCodeImage" />
+    <EditorJsonVisualizer v-if="isShowJsonVisualizer" />
     <div
       v-if="
         isEmpty
@@ -429,5 +507,11 @@ onMounted(() => {
 
 .CodeMirror-scrollbar-filler {
   background-color: transparent;
+}
+
+.CodeMirror .cm-searching {
+  background-color: var(--color-text-highlight);
+  color: black !important;
+  border-radius: 2px;
 }
 </style>

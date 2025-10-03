@@ -26,7 +26,7 @@
       "payPal": "Donează prin PayPal",
       "gumroad": "Donează prin Gumroad (Visa, Mastercard, etc.)"
     },
-    "twitter": "Twitter",
+    "twitter": "X",
     "devTools": "Comută Instrumentele de Dezvoltare",
     "links": {
       "snippets": "Colecție de Snippets"
@@ -52,6 +52,7 @@
     "format": "Formatare",
     "previewCode": "Previzualizare Cod",
     "previewScreenshot": "Previzualizare Screenshot",
+    "previewJson": "Previzualizare JSON",
     "fontSizeIncrease": "Mărește Dimensiunea Fontului",
     "fontSizeDecrease": "Micșorează Dimensiunea Fontului",
     "fontSizeReset": "Resetează Dimensiunea Fontului"

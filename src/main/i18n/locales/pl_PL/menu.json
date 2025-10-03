@@ -26,7 +26,7 @@
       "payPal": "Wesprzyj przez PayPal",
       "gumroad": "Wesprzyj przez Gumroad (Visa, Mastercard, itp.)"
     },
-    "twitter": "Twitter",
+    "twitter": "X",
     "devTools": "Przełącz narzędzia deweloperskie",
     "links": {
       "snippets": "Kolekcja fragmentów"
@@ -52,6 +52,7 @@
     "format": "Formatuj",
     "previewCode": "Podgląd kodu",
     "previewScreenshot": "Podgląd zrzutu ekranu",
+    "previewJson": "Podgląd JSON",
     "fontSizeIncrease": "Zwiększ rozmiar czcionki",
     "fontSizeDecrease": "Zmniejsz rozmiar czcionki",
     "fontSizeReset": "Resetuj rozmiar czcionki"

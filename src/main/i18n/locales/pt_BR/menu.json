@@ -26,7 +26,7 @@
       "payPal": "Doar via PayPal",
       "gumroad": "Doar via Gumroad (Visa, Mastercard, etc.)"
     },
-    "twitter": "Twitter",
+    "twitter": "X",
     "devTools": "Alternar Ferramentas de Desenvolvedor",
     "links": {
       "snippets": "Coleção de Snippets"
@@ -52,6 +52,7 @@
     "format": "Formatar",
     "previewCode": "Visualizar Código",
     "previewScreenshot": "Visualizar Screenshot",
+    "previewJson": "Prévia do JSON",
     "fontSizeIncrease": "Aumentar Tamanho da Fonte",
     "fontSizeDecrease": "Diminuir Tamanho da Fonte",
     "fontSizeReset": "Redefinir Tamanho da Fonte"

@@ -26,7 +26,7 @@
       "payPal": "Přispět přes PayPal",
       "gumroad": "Přispět přes Gumroad (Visa, Mastercard, atd.)"
     },
-    "twitter": "Twitter",
+    "twitter": "X",
     "devTools": "Přepnout vývojářské nástroje",
     "links": {
       "snippets": "Kolekce snippetů"
@@ -52,6 +52,7 @@
     "format": "Formátovat",
     "previewCode": "Náhled kódu",
     "previewScreenshot": "Náhled snímku obrazovky",
+    "previewJson": "Náhled JSON",
     "fontSizeIncrease": "Zvětšit velikost písma",
     "fontSizeDecrease": "Zmenšit velikost písma",
     "fontSizeReset": "Obnovit velikost písma"
