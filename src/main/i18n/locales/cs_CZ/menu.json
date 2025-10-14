@@ -44,7 +44,8 @@
       "dateCreated": "Data vytvoření",
       "name": "Názvu"
     },
-    "compactMode": "Kompaktní režim"
+    "compactMode": "Kompaktní režim",
+    "showSidebar": "Zobrazit/skrýt postranní panel"
   },
   "editor": {
     "label": "Editor",

@@ -44,7 +44,8 @@
       "dateCreated": "Oluşturulma Tarihi",
       "name": "İsim"
     },
-    "compactMode": "Kompakt Mod"
+    "compactMode": "Kompakt Mod",
+    "showSidebar": "Kenar Çubuğunu Göster/Gizle"
   },
   "editor": {
     "label": "Editör",

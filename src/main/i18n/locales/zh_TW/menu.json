@@ -44,7 +44,8 @@
       "dateCreated": "創建日期",
       "name": "名稱"
     },
-    "compactMode": "緊湊模式"
+    "compactMode": "緊湊模式",
+    "showSidebar": "顯示/隱藏側邊欄"
   },
   "editor": {
     "label": "編輯器",

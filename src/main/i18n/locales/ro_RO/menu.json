@@ -44,7 +44,8 @@
       "dateCreated": "Data Creării",
       "name": "Nume"
     },
-    "compactMode": "Mod Compact"
+    "compactMode": "Mod Compact",
+    "showSidebar": "Afișează/ascunde bara laterală"
   },
   "editor": {
     "label": "Editor",
