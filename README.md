@@ -93,7 +93,9 @@ Use massCode as a focused snippet workspace with multi-level folders, tags, and 
 
 Write longer markdown documents right next to your snippets: project docs, drafts, research notes, and personal knowledge bases.
 
+- Dashboard with activity overview, recent notes, top linked notes, and a notes graph preview
 - Editor, Live Preview, and Preview modes
+- Fullscreen notes graph for exploring internal links between notes
 - Integrated [Mermaid](https://mermaid-js.github.io/mermaid/#) diagrams
 - Mind maps generated from markdown heading structure
 - Fullscreen presentation mode for demos and meetings
@@ -112,6 +114,7 @@ A calculator-style notebook for natural-language calculations, conversions, and 
 
 Built-in utilities for the small tasks that usually send you to a browser tab:
 
+- **Compare:** JSON Diff
 - **Text:** Case Converter, Slug Generator, URL Parser
 - **Crypto:** Hash/HMAC Generator, Password Generator, UUID
 - **Encoders:** URL, Base64, JSON to TOML/XML/YAML, Color Converter

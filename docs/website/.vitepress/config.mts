@@ -119,6 +119,7 @@ export default defineConfig({
           text: 'Notes',
           items: [
             { text: 'Notes', link: '/documentation/notes/' },
+            { text: 'Dashboard', link: '/documentation/notes/dashboard' },
             { text: 'Library', link: '/documentation/notes/library' },
             { text: 'Folders', link: '/documentation/notes/folders' },
             { text: 'Tags', link: '/documentation/notes/tags' },
@@ -138,7 +139,8 @@ export default defineConfig({
         {
           text: 'Tools',
           items: [
-            { text: 'Developer Tools', link: '/documentation/tools/' },
+            { text: 'Overview', link: '/documentation/tools/' },
+            { text: 'JSON Diff', link: '/documentation/tools/json-diff' },
           ],
         },
       ],

@@ -28,8 +28,11 @@ export const RouterName = {
   devtoolsColorConverter: 'devtools/color-converter',
   devtoolsJsonGenerator: 'devtools/json-generator',
   devtoolsLoremIpsumGenerator: 'devtools/lorem-ipsum-generator',
+  devtoolsJsonDiff: 'devtools/json-diff',
   mathNotebook: 'math-notebook',
   notesSpace: 'notes-space',
+  notesDashboard: 'notes-space/dashboard',
+  notesGraph: 'notes-space/graph',
   notesPresentation: 'notes-space/presentation',
 } as const
 
@@ -43,6 +46,10 @@ const routes = [
     path: '/preferences',
     name: RouterName.preferences,
     component: () => import('@/views/Preferences.vue'),
+    redirect: () => {
+      const saved = sessionStorage.getItem('preferences:lastRoute')
+      return { name: saved || RouterName.preferencesStorage }
+    },
     children: [
       {
         path: 'storage',
@@ -85,6 +92,10 @@ const routes = [
     path: '/devtools',
     name: RouterName.devtools,
     component: () => import('@/views/Devtools.vue'),
+    redirect: () => {
+      const saved = sessionStorage.getItem('devtools:lastRoute')
+      return { name: saved || RouterName.devtoolsCaseConverter }
+    },
     children: [
       {
         path: 'text/case-converter',
@@ -181,6 +192,11 @@ const routes = [
         component: () =>
           import('@/components/devtools/generators/LoremIpsumGenerator.vue'),
       },
+      {
+        path: 'compare/json-diff',
+        name: RouterName.devtoolsJsonDiff,
+        component: () => import('@/components/devtools/compare/JsonDiff.vue'),
+      },
     ],
   },
   {
@@ -192,6 +208,18 @@ const routes = [
     path: '/notes',
     name: RouterName.notesSpace,
     component: () => import('@/components/notes/NotesSpace.vue'),
+    children: [
+      {
+        path: 'dashboard',
+        name: RouterName.notesDashboard,
+        component: () => import('@/views/NotesDashboard.vue'),
+      },
+      {
+        path: 'graph',
+        name: RouterName.notesGraph,
+        component: () => import('@/views/NotesGraph.vue'),
+      },
+    ],
   },
   {
     path: '/notes/presentation',

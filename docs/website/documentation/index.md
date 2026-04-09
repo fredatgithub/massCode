@@ -1,6 +1,6 @@
 ---
 title: Documentation Overview
-description: "Explore the massCode documentation for code snippets, markdown notes, math notebook, storage, sync, themes, and built-in developer tools."
+description: "Explore the massCode documentation for code snippets, markdown notes, math notebook, storage, sync, themes, JSON Diff, and built-in developer tools."
 ---
 
 # Overview
@@ -17,7 +17,7 @@ Use Code to build a reusable snippet library across projects and languages. The 
 
 ## Notes
 
-Use Notes for longer markdown documents that do not fit well into snippets: project notes, drafts, technical docs, meeting notes, and personal knowledge bases. It uses the same three-column layout as Code and adds live preview, mindmaps, and fullscreen presentation mode.
+Use Notes for longer markdown documents that do not fit well into snippets: project notes, drafts, technical docs, meeting notes, and personal knowledge bases. It uses the same three-column layout as Code and adds a Notes Dashboard, live preview, a notes graph, mindmaps, and fullscreen presentation mode.
 
 ## Math
 
@@ -25,7 +25,7 @@ Math is a calculator-style notebook for quick development math without leaving m
 
 ## Tools
 
-Tools covers the small one-off tasks that usually send you to a browser tab: encoders, decoders, generators, hash utilities, and text converters. Categories are listed on the left, and the active tool opens on the right.
+Tools covers the small one-off tasks that usually send you to a browser tab: JSON comparison, encoders, decoders, generators, hash utilities, and text converters. Categories are listed on the left, and the active tool opens on the right.
 
 ## General Settings
 
