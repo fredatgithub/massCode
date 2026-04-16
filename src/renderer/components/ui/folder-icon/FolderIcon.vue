@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Variants } from './variants'
 import { cn } from '@/utils'
-import { iconsSet } from './icons'
+import { Folder } from 'lucide-vue-next'
+import { resolveFolderIcon } from './icons'
 import { variants } from './variants'
 
 interface Props {
@@ -11,12 +12,30 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const resolvedIcon = computed(() => resolveFolderIcon(props.name))
+const iconClass = computed(() =>
+  cn(variants({ size: props.size }), props.class),
+)
 </script>
 
 <template>
-  <div
-    :class="cn(variants({ size }), props.class)"
+  <component
+    :is="resolvedIcon.component"
+    v-if="resolvedIcon?.component"
+    :class="iconClass"
+    :data-icon-name="resolvedIcon.name"
+  />
+  <img
+    v-else-if="resolvedIcon?.src"
+    :alt="resolvedIcon.name"
+    :class="cn(iconClass, 'object-contain')"
+    :data-icon-name="resolvedIcon.name"
+    :src="resolvedIcon.src"
+  >
+  <Folder
+    v-else
+    :class="iconClass"
     :data-icon-name="name"
-    v-html="iconsSet[name]"
   />
 </template>
