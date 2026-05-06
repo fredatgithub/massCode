@@ -1,6 +1,12 @@
 import type {
   AppStore,
   CodeState,
+  CommandPaletteRecentEntry,
+  CommandPaletteRecentTarget,
+  CommandPaletteUsageEntry,
+  CommandPaletteUsageTarget,
+  DonationsState,
+  HttpState,
   NotesEditorMode,
   NotesRouteName,
   NotesState,
@@ -16,6 +22,7 @@ import {
   readNumber,
   readOptionalNumber,
   readOptionalNumberArray,
+  readString,
   replaceStoreIfChanged,
 } from '../sanitize'
 
@@ -31,6 +38,13 @@ const APP_STORE_DEFAULTS: AppStore = {
     layout: {
       mode: 'all-panels',
       tagsListHeight: LAYOUT_DEFAULTS.tags.height,
+    },
+  },
+  http: {
+    selection: {},
+    layout: {
+      mode: 'all-panels',
+      environmentsListHeight: LAYOUT_DEFAULTS.http.environmentsPanel.height,
     },
   },
   notes: {
@@ -54,6 +68,48 @@ const APP_STORE_DEFAULTS: AppStore = {
   notifications: {
     lastNotifiedUpdateVersion: '',
   },
+  commandPalette: {
+    recent: [],
+    usage: [],
+  },
+  donations: {
+    lastActiveDay: '',
+    currentStreak: 0,
+    copies: {
+      code: 0,
+      http: 0,
+      notes: 0,
+      math: 0,
+      tools: 0,
+    },
+    created: {
+      code: 0,
+      http: 0,
+      notes: 0,
+      math: 0,
+    },
+    sent: {
+      http: 0,
+    },
+    lastShownCopyMilestones: {
+      code: 0,
+      http: 0,
+      notes: 0,
+      math: 0,
+      tools: 0,
+    },
+    lastShownCreatedMilestones: {
+      code: 0,
+      http: 0,
+      notes: 0,
+      math: 0,
+    },
+    lastShownSentMilestones: {
+      http: 0,
+    },
+    shownStreakMilestones: [],
+    lastGreetingDay: '',
+  },
   activeSpaceId: 'code',
 }
 
@@ -69,6 +125,19 @@ function sanitizeCodeState(value: unknown): CodeState {
     state.folderId = source.folderId
   if (typeof source.tagId === 'number')
     state.tagId = source.tagId
+  if (typeof source.libraryFilter === 'string')
+    state.libraryFilter = source.libraryFilter
+  return state
+}
+
+function sanitizeHttpState(value: unknown): HttpState {
+  const source = asRecord(value)
+  const state: HttpState = {}
+
+  if (typeof source.requestId === 'number')
+    state.requestId = source.requestId
+  if (typeof source.folderId === 'number')
+    state.folderId = source.folderId
   if (typeof source.libraryFilter === 'string')
     state.libraryFilter = source.libraryFilter
   return state
@@ -113,14 +182,232 @@ function getLegacyNotesLayoutMode(
   return source.isListHidden === true ? 'editor-only' : 'list-editor'
 }
 
+function sanitizeDonations(value: unknown): DonationsState {
+  const source = asRecord(value)
+  const copiesSource = asRecord(source.copies)
+  const createdSource = asRecord(source.created)
+  const sentSource = asRecord(source.sent)
+  const copyMilestonesSource = asRecord(source.lastShownCopyMilestones)
+  const createdMilestonesSource = asRecord(source.lastShownCreatedMilestones)
+  const sentMilestonesSource = asRecord(source.lastShownSentMilestones)
+  const defaults = APP_STORE_DEFAULTS.donations
+  const shownStreaks = readOptionalNumberArray(source, 'shownStreakMilestones')
+
+  return {
+    lastActiveDay: readString(source, 'lastActiveDay', defaults.lastActiveDay),
+    currentStreak: readNumber(source, 'currentStreak', defaults.currentStreak),
+    copies: {
+      code: readNumber(copiesSource, 'code', defaults.copies.code),
+      http: readNumber(copiesSource, 'http', defaults.copies.http),
+      notes: readNumber(copiesSource, 'notes', defaults.copies.notes),
+      math: readNumber(copiesSource, 'math', defaults.copies.math),
+      tools: readNumber(copiesSource, 'tools', defaults.copies.tools),
+    },
+    created: {
+      code: readNumber(createdSource, 'code', defaults.created.code),
+      http: readNumber(createdSource, 'http', defaults.created.http),
+      notes: readNumber(createdSource, 'notes', defaults.created.notes),
+      math: readNumber(createdSource, 'math', defaults.created.math),
+    },
+    sent: {
+      http: readNumber(sentSource, 'http', defaults.sent.http),
+    },
+    lastShownCopyMilestones: {
+      code: readNumber(
+        copyMilestonesSource,
+        'code',
+        defaults.lastShownCopyMilestones.code,
+      ),
+      http: readNumber(
+        copyMilestonesSource,
+        'http',
+        defaults.lastShownCopyMilestones.http,
+      ),
+      notes: readNumber(
+        copyMilestonesSource,
+        'notes',
+        defaults.lastShownCopyMilestones.notes,
+      ),
+      math: readNumber(
+        copyMilestonesSource,
+        'math',
+        defaults.lastShownCopyMilestones.math,
+      ),
+      tools: readNumber(
+        copyMilestonesSource,
+        'tools',
+        defaults.lastShownCopyMilestones.tools,
+      ),
+    },
+    lastShownCreatedMilestones: {
+      code: readNumber(
+        createdMilestonesSource,
+        'code',
+        defaults.lastShownCreatedMilestones.code,
+      ),
+      http: readNumber(
+        createdMilestonesSource,
+        'http',
+        defaults.lastShownCreatedMilestones.http,
+      ),
+      notes: readNumber(
+        createdMilestonesSource,
+        'notes',
+        defaults.lastShownCreatedMilestones.notes,
+      ),
+      math: readNumber(
+        createdMilestonesSource,
+        'math',
+        defaults.lastShownCreatedMilestones.math,
+      ),
+    },
+    lastShownSentMilestones: {
+      http: readNumber(
+        sentMilestonesSource,
+        'http',
+        defaults.lastShownSentMilestones.http,
+      ),
+    },
+    shownStreakMilestones: shownStreaks ?? [...defaults.shownStreakMilestones],
+    lastGreetingDay: readString(
+      source,
+      'lastGreetingDay',
+      defaults.lastGreetingDay,
+    ),
+  }
+}
+
+function sanitizeCommandPaletteRecent(
+  value: unknown,
+): CommandPaletteRecentEntry[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const allowedTargets = [
+    'space',
+    'snippet',
+    'note',
+    'http-request',
+  ] satisfies CommandPaletteRecentTarget[]
+  const allowedSpaces = [
+    'code',
+    'tools',
+    'math',
+    'notes',
+    'http',
+  ] satisfies SpaceId[]
+  const entries: CommandPaletteRecentEntry[] = []
+  const seen = new Set<string>()
+
+  for (const rawEntry of value) {
+    const entry = asRecord(rawEntry)
+    const id = entry.id
+    const target = entry.target
+    const targetId = entry.targetId
+    const title = entry.title
+    const subtitle = entry.subtitle
+    const spaceId = entry.spaceId
+    const openedAt = entry.openedAt
+
+    if (
+      typeof id !== 'string'
+      || seen.has(id)
+      || typeof target !== 'string'
+      || !allowedTargets.includes(target as CommandPaletteRecentTarget)
+      || typeof targetId !== 'string'
+      || typeof title !== 'string'
+      || typeof subtitle !== 'string'
+      || typeof spaceId !== 'string'
+      || !allowedSpaces.includes(spaceId as SpaceId)
+      || typeof openedAt !== 'number'
+      || !Number.isFinite(openedAt)
+    ) {
+      continue
+    }
+
+    seen.add(id)
+    entries.push({
+      id,
+      target: target as CommandPaletteRecentTarget,
+      targetId,
+      title,
+      subtitle,
+      spaceId: spaceId as SpaceId,
+      openedAt,
+    })
+  }
+
+  return entries.slice(0, 30)
+}
+
+function sanitizeCommandPaletteUsage(
+  value: unknown,
+): CommandPaletteUsageEntry[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const allowedTargets = [
+    'space',
+    'snippet',
+    'note',
+    'http-request',
+    'command',
+  ] satisfies CommandPaletteUsageTarget[]
+  const entries: CommandPaletteUsageEntry[] = []
+  const seen = new Set<string>()
+
+  for (const rawEntry of value) {
+    const entry = asRecord(rawEntry)
+    const id = entry.id
+    const target = entry.target
+    const targetId = entry.targetId
+    const openedAt = entry.openedAt
+    const openCount = entry.openCount
+    const lastQuery = entry.lastQuery
+
+    if (
+      typeof id !== 'string'
+      || seen.has(id)
+      || typeof target !== 'string'
+      || !allowedTargets.includes(target as CommandPaletteUsageTarget)
+      || typeof targetId !== 'string'
+      || typeof openedAt !== 'number'
+      || !Number.isFinite(openedAt)
+      || typeof openCount !== 'number'
+      || !Number.isFinite(openCount)
+      || openCount < 1
+      || (lastQuery !== undefined && typeof lastQuery !== 'string')
+    ) {
+      continue
+    }
+
+    seen.add(id)
+    entries.push({
+      id,
+      target: target as CommandPaletteUsageTarget,
+      targetId,
+      openedAt,
+      openCount,
+      ...(lastQuery ? { lastQuery } : {}),
+    })
+  }
+
+  return entries.slice(0, 100)
+}
+
 function sanitizeAppStore(value: unknown): AppStore {
   const source = asRecord(value)
   const windowSource = asRecord(source.window)
   const codeSource = asRecord(source.code)
+  const httpSource = asRecord(source.http)
   const notesSource = asRecord(source.notes)
   const notificationsSource = asRecord(source.notifications)
+  const commandPaletteSource = asRecord(source.commandPalette)
   const legacySizes = asRecord(source.sizes)
   const codeLayoutSource = asRecord(codeSource.layout)
+  const httpLayoutSource = asRecord(httpSource.layout)
   const notesLayoutSource = asRecord(notesSource.layout)
 
   return {
@@ -171,6 +458,41 @@ function sanitizeAppStore(value: unknown): AppStore {
           readOptionalNumber(codeLayoutSource, 'twoPanel')
           ?? readOptionalNumber(legacySizes, 'codeListLayout')
           ?? undefined,
+      },
+    },
+    http: {
+      selection: sanitizeHttpState(httpSource.selection),
+      layout: {
+        mode: readEnum(
+          httpLayoutSource,
+          'mode',
+          ['all-panels', 'list-editor', 'editor-only'] as const,
+          APP_STORE_DEFAULTS.http.layout.mode,
+        ),
+        environmentsListHeight: (() => {
+          const raw = readNumber(
+            httpLayoutSource,
+            'environmentsListHeight',
+            LAYOUT_DEFAULTS.http.environmentsPanel.height,
+          )
+          return raw < LAYOUT_DEFAULTS.http.environmentsPanel.min
+            ? LAYOUT_DEFAULTS.http.environmentsPanel.height
+            : raw
+        })(),
+        threePanel: readOptionalNumberArray(httpLayoutSource, 'threePanel'),
+        twoPanel: readOptionalNumber(httpLayoutSource, 'twoPanel') ?? undefined,
+        responsePanelHeight: (() => {
+          const raw = readOptionalNumber(
+            httpLayoutSource,
+            'responsePanelHeight',
+          )
+          if (raw === undefined) {
+            return undefined
+          }
+          return raw < LAYOUT_DEFAULTS.http.responsePanel.min
+            ? LAYOUT_DEFAULTS.http.responsePanel.height
+            : raw
+        })(),
       },
     },
     notes: {
@@ -269,14 +591,16 @@ function sanitizeAppStore(value: unknown): AppStore {
           : typeof source.lastNotifiedUpdateVersion === 'string'
             ? source.lastNotifiedUpdateVersion
             : APP_STORE_DEFAULTS.notifications.lastNotifiedUpdateVersion,
-      nextDonateAt:
-        readOptionalNumber(notificationsSource, 'nextDonateAt')
-        ?? readOptionalNumber(source, 'nextDonateNotification'),
     },
+    commandPalette: {
+      recent: sanitizeCommandPaletteRecent(commandPaletteSource.recent),
+      usage: sanitizeCommandPaletteUsage(commandPaletteSource.usage),
+    },
+    donations: sanitizeDonations(source.donations),
     activeSpaceId: readEnum(
       source,
       'activeSpaceId',
-      ['code', 'tools', 'math', 'notes'] as const,
+      ['code', 'tools', 'math', 'notes', 'http'] as const,
       APP_STORE_DEFAULTS.activeSpaceId,
     ) as SpaceId,
   }

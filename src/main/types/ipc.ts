@@ -4,6 +4,7 @@ export type CombineWith<T extends string, U extends string> = `${U}:${T}`
 
 type MainMenuAction =
   | 'add-description'
+  | 'copy-note'
   | 'copy-snippet'
   | 'find'
   | 'font-size-decrease'
@@ -27,6 +28,7 @@ type MainMenuAction =
   | 'presentation-mode'
   | 'set-layout-mode'
   | 'set-notes-editor-mode'
+  | 'send-http-request'
   | 'toggle-sidebar'
   | 'toggle-compact-mode'
   | 'update-context'
@@ -42,8 +44,10 @@ type SystemAction =
   | 'reload'
   | 'move-vault'
   | 'open-external'
+  | 'show-http-request-in-file-manager'
   | 'show-notes-folder-in-file-manager'
   | 'show-note-in-file-manager'
+  | 'show-snippet-in-file-manager'
   | 'deep-link'
   | 'update-available'
   | 'renderer-ready'
@@ -54,7 +58,7 @@ type SystemAction =
 type PrettierAction = 'format'
 type FsAction = 'assets' | 'notes-asset'
 type ThemeAction = 'list' | 'get' | 'open-dir' | 'create-template' | 'changed'
-type SpacesAction = 'math:read' | 'math:write'
+type SpacesAction = 'math:read' | 'math:write' | 'http:execute'
 
 export type MainMenuChannel = CombineWith<MainMenuAction, 'main-menu'>
 export type DBChannel = CombineWith<DBAction, 'db'>

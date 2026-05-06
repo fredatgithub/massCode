@@ -8,7 +8,7 @@ A free, open-source developer workspace.
 </p>
 
 <p align="center">
-  <strong>Snippets, notes, calculations, and dev tools in one local-first app.</strong>
+  <strong>Snippets, notes, HTTP requests, calculations, and dev tools in one local-first app.</strong>
   <br>
   Your data stays on your machine as plain Markdown files.
 </p>
@@ -75,7 +75,7 @@ massCode is free and open source. But building and maintaining a quality tool ta
 
 ## About
 
-Originally a snippet manager, massCode now brings together snippets, notes, calculations, and developer tools in one desktop app, so everyday work stays in one place.
+Originally a snippet manager, massCode now brings together snippets, notes, HTTP requests, calculations, and developer tools in one desktop app, so everyday work stays in one place.
 
 ## Features
 
@@ -101,6 +101,17 @@ Write longer markdown documents right next to your snippets: project docs, draft
 - Fullscreen presentation mode for demos and meetings
 - Callout blocks and image embedding
 
+### HTTP Client
+
+Keep API requests close to your code snippets and project notes with a lightweight HTTP client built into massCode.
+
+- Organize requests with folders and custom folder icons
+- Use environments and `{{variables}}` for local, staging, and production APIs
+- Edit params, headers, body, auth, and markdown descriptions
+- Preview requests as raw HTTP or cURL before sending
+- Inspect response status, time, size, body, and headers
+- Send the current request with <kbd>Cmd+Enter</kbd> on macOS or <kbd>Ctrl+Enter</kbd> on Windows and Linux
+
 ### Math Notebook
 
 A calculator-style notebook for natural-language calculations, conversions, and date math without leaving your workflow.
@@ -120,9 +131,18 @@ Built-in utilities for the small tasks that usually send you to a browser tab:
 - **Encoders:** URL, Base64, JSON to TOML/XML/YAML, Color Converter
 - **Generators:** JSON Generator, Lorem Ipsum
 
+### Command Palette
+
+Jump to spaces, snippets, notes, HTTP requests, and common actions from anywhere with a keyboard-first command palette.
+
+- Open with <kbd>Cmd+P</kbd> on macOS or <kbd>Ctrl+P</kbd> on Windows and Linux
+- Search across snippets, notes, HTTP requests, spaces, and commands
+- Run create actions for snippets, notes, HTTP requests, and folders
+- Scope search to a space with `@` or open command mode with `>`
+
 ## Markdown Vault
 
-Your snippets and notes live as plain `.md` files on disk with frontmatter metadata, so the data stays readable and portable.
+Your snippets, notes, and HTTP requests live as plain `.md` files on disk with frontmatter metadata, so the data stays readable and portable.
 
 - **Git-friendly** - track changes and sync via any Git remote
 - **Cloud sync** - works with iCloud, Dropbox, Google Drive, Syncthing

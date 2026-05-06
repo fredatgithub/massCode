@@ -6,11 +6,20 @@ import {
   refreshFiatRatesForced,
 } from '../../currencyRates'
 import {
+  getHttpPaths,
+  getHttpRuntimeCache,
+} from '../../storage/providers/markdown/http'
+import {
   findNoteById,
   getNotesFolderPathById,
   getNotesPaths,
   getNotesRuntimeCache,
 } from '../../storage/providers/markdown/notes/runtime'
+import {
+  findSnippetById,
+  getPaths,
+  getRuntimeCache,
+} from '../../storage/providers/markdown/runtime'
 import {
   getDirectoryState,
   moveVault,
@@ -56,6 +65,28 @@ export function registerSystemHandlers() {
     shell.openExternal(url)
   })
 
+  ipcMain.handle(
+    'system:show-snippet-in-file-manager',
+    (_, snippetId: number) => {
+      if (!Number.isFinite(snippetId) || snippetId <= 0) {
+        return false
+      }
+
+      const paths = getPaths(getVaultPath())
+      const cache = getRuntimeCache(paths)
+      const snippet = findSnippetById(cache.snippets, snippetId)
+
+      if (!snippet) {
+        return false
+      }
+
+      const snippetAbsolutePath = path.join(paths.vaultPath, snippet.filePath)
+      shell.showItemInFolder(snippetAbsolutePath)
+
+      return true
+    },
+  )
+
   ipcMain.handle('system:show-note-in-file-manager', (_, noteId: number) => {
     if (!Number.isFinite(noteId) || noteId <= 0) {
       return false
@@ -74,6 +105,31 @@ export function registerSystemHandlers() {
 
     return true
   })
+
+  ipcMain.handle(
+    'system:show-http-request-in-file-manager',
+    (_, requestId: number) => {
+      if (!Number.isFinite(requestId) || requestId <= 0) {
+        return false
+      }
+
+      const httpPaths = getHttpPaths(getVaultPath())
+      const cache = getHttpRuntimeCache(httpPaths)
+      const request = cache.requestById.get(requestId)
+
+      if (!request) {
+        return false
+      }
+
+      const requestAbsolutePath = path.join(
+        httpPaths.httpRoot,
+        request.filePath,
+      )
+      shell.showItemInFolder(requestAbsolutePath)
+
+      return true
+    },
+  )
 
   ipcMain.handle(
     'system:show-notes-folder-in-file-manager',

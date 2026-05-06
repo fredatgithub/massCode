@@ -4,6 +4,10 @@ import {
   queueNavigationUIStateRestore,
   useApp,
   useFolders,
+  useHttpApp,
+  useHttpFolders,
+  useHttpRequests,
+  useHttpSpaceInit,
   useNavigationHistory,
   useNoteFolders,
   useNotes,
@@ -16,7 +20,7 @@ import { router, RouterName } from '@/router'
 import { api } from '@/services/api'
 
 interface InternalTarget {
-  type: 'snippet' | 'note'
+  type: 'snippet' | 'note' | 'http-request'
   id: number
 }
 
@@ -38,9 +42,23 @@ const {
   notesState,
   pendingNotesNavigation,
 } = useNotesApp()
+const {
+  focusedRequestId,
+  highlightedFolderIds: highlightedHttpFolderIds,
+  highlightedRequestIds,
+  httpState,
+  isHttpSpaceInitialized,
+} = useHttpApp()
 
 const { clearFolderSelection, getFolders, selectFolder } = useFolders()
 const { getSnippets, selectSnippet } = useSnippets()
+const {
+  clearFolderSelection: clearHttpFolderSelection,
+  getHttpFolders,
+  selectHttpFolder,
+} = useHttpFolders()
+const { getHttpRequests, selectHttpRequest } = useHttpRequests()
+const { initHttpSpace } = useHttpSpaceInit()
 const {
   clearFolderSelection: clearNoteFolderSelection,
   getNoteFolders,
@@ -64,6 +82,12 @@ function clearNotesNavigationState() {
   focusedNoteId.value = undefined
 }
 
+function clearHttpNavigationState() {
+  highlightedHttpFolderIds.value.clear()
+  highlightedRequestIds.value.clear()
+  focusedRequestId.value = undefined
+}
+
 async function ensureCodeRoute() {
   if (router.currentRoute.value.name !== RouterName.main) {
     await router.push({ name: RouterName.main })
@@ -73,6 +97,12 @@ async function ensureCodeRoute() {
 async function ensureNotesRoute() {
   if (router.currentRoute.value.name !== RouterName.notesSpace) {
     await router.push({ name: RouterName.notesSpace })
+  }
+}
+
+async function ensureHttpRoute() {
+  if (router.currentRoute.value.name !== RouterName.httpSpace) {
+    await router.push({ name: RouterName.httpSpace })
   }
 }
 
@@ -175,12 +205,56 @@ export async function openNoteDeepLink(noteId: number): Promise<void> {
   }
 }
 
+export async function openHttpRequestDeepLink(
+  requestId: number,
+): Promise<void> {
+  clearHttpNavigationState()
+  await ensureHttpRoute()
+
+  try {
+    const { data: request } = await api.httpRequests.getHttpRequestsById(
+      String(requestId),
+    )
+
+    if (request.folderId !== null) {
+      await getHttpFolders()
+      await selectHttpFolder(request.folderId)
+      httpState.libraryFilter = undefined
+      await getHttpRequests({
+        folderId: request.folderId,
+        isDeleted: request.isDeleted,
+      })
+    }
+    else {
+      clearHttpFolderSelection()
+      httpState.libraryFilter = request.isDeleted
+        ? LibraryFilter.Trash
+        : LibraryFilter.Inbox
+      await getHttpRequests(
+        request.isDeleted ? { isDeleted: 1 } : { isInbox: 1 },
+      )
+    }
+
+    selectHttpRequest(requestId)
+    isHttpSpaceInitialized.value = true
+  }
+  catch (error) {
+    console.error('Failed to open HTTP request deep link:', error)
+    await initHttpSpace()
+  }
+}
+
 export async function openInternalTarget(
   target: InternalTarget,
 ): Promise<void> {
   if (isNavigatingHistory.value) {
     if (target.type === 'snippet') {
       await openSnippetDeepLink(target.id)
+      return
+    }
+
+    if (target.type === 'http-request') {
+      await openHttpRequestDeepLink(target.id)
       return
     }
 
@@ -191,6 +265,11 @@ export async function openInternalTarget(
   await recordNavigation(async () => {
     if (target.type === 'snippet') {
       await openSnippetDeepLink(target.id)
+      return
+    }
+
+    if (target.type === 'http-request') {
+      await openHttpRequestDeepLink(target.id)
       return
     }
 
@@ -213,6 +292,11 @@ async function restoreNavigationTarget(
 
     if (target.type === 'snippet') {
       await openSnippetDeepLink(target.id)
+      return
+    }
+
+    if (target.type === 'http-request') {
+      await openHttpRequestDeepLink(target.id)
       return
     }
 
@@ -247,6 +331,7 @@ export async function handleDeepLink(url: string): Promise<void> {
   const parsed = new URL(url)
   const snippetId = parsed.searchParams.get('snippetId')
   const noteId = parsed.searchParams.get('noteId')
+  const httpRequestId = parsed.searchParams.get('httpRequestId')
   const legacyFolderId = parsed.searchParams.get('folderId')
 
   if (snippetId) {
@@ -262,6 +347,13 @@ export async function handleDeepLink(url: string): Promise<void> {
   if (noteId) {
     await recordNavigation(async () => {
       await openNoteDeepLink(Number(noteId))
+    })
+    return
+  }
+
+  if (httpRequestId) {
+    await recordNavigation(async () => {
+      await openHttpRequestDeepLink(Number(httpRequestId))
     })
   }
 }

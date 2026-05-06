@@ -17,11 +17,21 @@ massCode stores your data locally on your computer. Snippets and notes live in a
 - **Cloud-sync friendly.** iCloud, Dropbox, Google Drive, or Syncthing all work because the vault is just a folder on disk.
 - **Live updates.** massCode watches the vault in real time, so external file changes appear in the app automatically.
 
+::: warning
+Vault files are stored as plain text. Do not store passwords, API tokens, private keys, or other secrets in snippets, notes, HTTP requests, or HTTP environments if your vault is synced, shared, or committed to Git. Use an external secret manager for real credentials.
+:::
+
 ### How it works
 
 The vault mirrors your folder structure. Each folder becomes a directory on disk, and each snippet or note becomes a `.md` file inside it. Metadata such as language, tags, and ordering is stored in frontmatter, while `.state.json` stores UI state like expanded folders and sort order.
 
 You can change the vault location in **Settings → Storage**.
+
+### File Name Restrictions
+
+Because Markdown Vault maps folders, snippets, and notes directly to files and directories on disk, massCode applies a small set of cross-platform naming rules.
+
+Names cannot contain `< > : " / \ | ? * # [ ] ^`, cannot start or end with `.`, and cannot use Windows reserved names such as `CON`, `PRN`, `AUX`, `NUL`, `COM1`, or `LPT1`. These rules keep filenames portable across Windows, macOS, and Linux while also avoiding conflicts with Obsidian-style Markdown links and block references in shared vault workflows.
 
 ## Migration from SQLite
 
@@ -32,3 +42,25 @@ If you are upgrading from an older version of massCode that used SQLite storage,
 - Select your old `massCode.db` file
 
 massCode converts your folders and snippets to Markdown Vault format.
+
+## Migration from v3 `db.json`
+
+massCode v5 does not read `db.json` directly. If you are upgrading from massCode v3, first migrate the v3 JSON database through massCode v4, then migrate from v4 to v5.
+
+The supported upgrade path is:
+
+```text
+v3 db.json -> v4 massCode.db -> v5 Markdown Vault
+```
+
+Before upgrading, make a backup copy of your existing `db.json`.
+
+To migrate from v3:
+
+- Install and open [massCode v4.7.1](https://github.com/massCodeIO/massCode/releases/tag/v4.7.1)
+- Confirm that your snippets are visible in v4
+- Confirm that v4 created a `massCode.db` file
+- Install and open massCode v5
+- Import the `massCode.db` file into Markdown Vault from **Settings -> Storage**
+
+If you still have only `db.json`, massCode v5 cannot import it on its own. Restore your `db.json` backup and complete the v4 migration step first.

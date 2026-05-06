@@ -23,7 +23,15 @@ import {
   emptyEntityTrashFromStateAndDisk,
   getEntityDeleteCounts,
 } from '../../runtime/shared/entityStorage'
-import { throwStorageError, validateEntryName } from '../../runtime/validation'
+import {
+  assertUniqueSiblingEntryName,
+  throwStorageError,
+  validateEntryName,
+} from '../../runtime/validation'
+import {
+  promoteBareBacklinksAfterNoteCreate,
+  rewriteBacklinksAfterNoteUpdate,
+} from '../runtime/backlinks'
 import { getNotesPaths } from '../runtime/constants'
 import { findNoteById, persistNote, writeNoteToFile } from '../runtime/notes'
 import { findNotesFolderById } from '../runtime/paths'
@@ -76,12 +84,18 @@ export function createNotesNotesStorage(): NotesStorage {
   return {
     getNotes(query: NotesQueryInput): NoteRecord[] {
       const { state, notes } = getCache()
-      const matchedIds = query.search
-        ? getNoteIdsBySearchQuery(notes, query.search)
-        : null
+      const search = query.search?.trim().toLowerCase()
+      const matchedIds
+        = search && !query.searchNameOnly
+          ? getNoteIdsBySearchQuery(notes, search)
+          : null
       const filtered = filterAndSortByQuery({
         entities: notes,
         filters: [
+          note =>
+            !search
+            || !query.searchNameOnly
+            || note.name.toLowerCase().includes(search),
           note => !matchedIds || matchedIds.has(note.id),
           (note, query) =>
             query.isDeleted !== undefined
@@ -122,6 +136,7 @@ export function createNotesNotesStorage(): NotesStorage {
 
       const name = validateEntryName(input.name, 'note')
       const folderId = input.folderId ?? null
+      assertUniqueSiblingEntryName(notes, folderId, name, 'note')
       const result = createEntityInStateAndDisk<MarkdownNote>({
         createEntity: ({ folderId, id, name, now }) => ({
           content: '',
@@ -152,6 +167,13 @@ export function createNotesNotesStorage(): NotesStorage {
           }),
       })
 
+      promoteBareBacklinksAfterNoteCreate({
+        newNoteId: result.id,
+        notes,
+        paths,
+        state,
+      })
+
       saveNotesState(paths, state)
 
       return result
@@ -167,6 +189,8 @@ export function createNotesNotesStorage(): NotesStorage {
       }
 
       const previousFilePath = note.filePath
+      const previousName = note.name
+      const previousFolderId = note.folderId
       const updateResult = applyEntityUpdateFields({
         entity: note,
         fieldPresence: 'defined',
@@ -175,8 +199,25 @@ export function createNotesNotesStorage(): NotesStorage {
         normalizeFlag: value => normalizeFlag(value),
         onMissingFolder: () =>
           throwStorageError('FOLDER_NOT_FOUND', 'Folder not found'),
-        resolveName: (inputName, currentName) =>
-          validateEntryName(inputName ?? currentName, 'note'),
+        resolveName: (inputName, currentName) => {
+          const next = validateEntryName(inputName ?? currentName, 'note')
+          const isFolderChanging
+            = input.folderId !== undefined
+              && (input.folderId ?? null) !== previousFolderId
+          if (
+            !isFolderChanging
+            && next.toLowerCase() !== currentName.toLowerCase()
+          ) {
+            assertUniqueSiblingEntryName(
+              notes,
+              previousFolderId,
+              next,
+              'note',
+              note.id,
+            )
+          }
+          return next
+        },
       })
       if (!updateResult.hasAnyField) {
         return { invalidInput: true, notFound: false }
@@ -191,6 +232,19 @@ export function createNotesNotesStorage(): NotesStorage {
       }
       else {
         writeNoteToFile(paths, note)
+      }
+
+      if (note.name !== previousName || note.folderId !== previousFolderId) {
+        rewriteBacklinksAfterNoteUpdate({
+          nextFolderId: note.folderId,
+          nextName: note.name,
+          notes,
+          paths,
+          previousFolderId,
+          previousName,
+          state,
+          updatedNoteId: note.id,
+        })
       }
 
       saveNotesState(paths, state)

@@ -1,6 +1,8 @@
 {
   "confirm": {
     "delete": "Are you sure you want to delete \"{{name}}\"?",
+    "deleteVariable": "Are you sure you want to delete variable \"{{name}}\"?",
+    "deleteUnnamedVariable": "Are you sure you want to delete this variable?",
     "deletePermanently": "Are you sure you want to permanently delete \"{{name}}\"?",
     "deleteConfirmMultipleSnippets": "Are you sure you want to permanently delete {{count}} selected snippets?",
     "emptyTrash": "Are you sure you want to permanently delete all snippets in Trash?",
@@ -31,7 +33,16 @@
     ]
   },
   "error": {
-    "migration": "Auto-migration from SQLite failed: {{error}}"
+    "migration": "Auto-migration from SQLite failed: {{error}}",
+    "entryNameEmpty": "Name cannot be empty.",
+    "entryNameLeadingDot": "Name cannot start with a dot.",
+    "entryNameInvalidChars": "Name cannot contain these characters: {{- chars}}",
+    "entryNameTrailingDot": "Name cannot end with a dot.",
+    "entryNameWindowsReserved": "This name is reserved on Windows.",
+    "entryNameNoteConflict": "A note with this name already exists in this folder.",
+    "entryNameSnippetConflict": "A snippet with this name already exists in this folder.",
+    "entryNameRequestConflict": "A request with this name already exists in this folder.",
+    "entryNameFolderConflict": "A folder with this name already exists at this level."
   },
   "description": {
     "storageVault": "Choose the vault directory. To sync between devices, select a folder in iCloud Drive, Google Drive or Dropbox.",
@@ -39,8 +50,44 @@
     "migrateSqliteUtility": "If you have a massCode.db file from a previous version, use this utility to import your data into the current Markdown Vault."
   },
   "special": {
-    "supportMessage": "Hi, Anton here 👋<br><br>\nThanks for using massCode. If you find this app useful, please {{-tagStart}}donate{{-tagEnd}}. It will inspire me to continue development on the project.",
     "unsponsored": "Unsponsored"
+  },
+  "donations": {
+    "trigger": {
+      "copy": {
+        "code": "{{count}} snippets copied 🚀",
+        "http": "{{count}} HTTP items copied 🚀",
+        "notes": "{{count}} notes copied 🚀",
+        "math": "{{count}} math results copied 🚀",
+        "tools": "{{count}} tool outputs copied 🚀"
+      },
+      "created": {
+        "code": "{{count}} snippets created 🎉",
+        "http": "{{count}} HTTP requests created 🎉",
+        "notes": "{{count}} notes created 🎉",
+        "math": "{{count}} sheets created 🎉"
+      },
+      "sent": {
+        "http": "{{count}} HTTP requests sent 🚀"
+      },
+      "streak_7": {
+        "title": "7 days in a row 🔥"
+      },
+      "streak_30": {
+        "title": "A month with massCode 🎊"
+      },
+      "streak_100": {
+        "title": "100 days with massCode 🏆"
+      }
+    },
+    "body": {
+      "full": "Hi, Anton here 👋\nI build and maintain massCode on my own. If it helps your work, please support the project so it can keep growing.",
+      "short": "Enjoying massCode? Please support the project so it can keep growing."
+    },
+    "actions": {
+      "support": "Support",
+      "dismiss": "Not now"
+    }
   },
   "release": {},
   "update": {

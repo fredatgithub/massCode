@@ -9,6 +9,65 @@
     "library": "Library",
     "fragment": "Fragment"
   },
+  "commandPalette": {
+    "title": "Command Palette",
+    "description": "Search spaces, snippets, notes, and HTTP requests.",
+    "placeholder": "Search or run command...",
+    "commandPlaceholder": "Run command...",
+    "scopedPlaceholder": "Search in {{space}}...",
+    "clearScope": "Clear scope",
+    "searching": "Searching...",
+    "empty": "No results found",
+    "groups": {
+      "recent": "Recent",
+      "actions": "Actions",
+      "spaces": "Spaces",
+      "results": "Results",
+      "snippets": "Snippets",
+      "notes": "Notes",
+      "httpRequests": "HTTP Requests"
+    },
+    "actions": {
+      "newSnippet": "New snippet",
+      "newSnippetSubtitle": "Create a code snippet",
+      "newNote": "New note",
+      "newNoteSubtitle": "Create a note",
+      "newHttpRequest": "New HTTP request",
+      "newHttpRequestSubtitle": "Create an HTTP request",
+      "newCodeFolder": "New code folder",
+      "newCodeFolderSubtitle": "Create a folder in Code",
+      "newNotesFolder": "New notes folder",
+      "newNotesFolderSubtitle": "Create a folder in Notes",
+      "newHttpFolder": "New HTTP folder",
+      "newHttpFolderSubtitle": "Create a folder in HTTP",
+      "openPreferences": "Open preferences",
+      "openPreferencesSubtitle": "Change massCode settings"
+    },
+    "fallbacks": {
+      "createSnippet": "Create snippet \"{{query}}\"",
+      "createSnippetSubtitle": "Create in Code Inbox",
+      "createNote": "Create note \"{{query}}\"",
+      "createNoteSubtitle": "Create in Notes Inbox",
+      "createHttpRequest": "Create HTTP request \"{{query}}\"",
+      "createHttpRequestFromUrl": "Create HTTP request from URL",
+      "createHttpRequestSubtitle": "Create in HTTP"
+    },
+    "actionPanel": {
+      "heading": "Actions",
+      "open": "Open",
+      "run": "Run",
+      "copyTitle": "Copy title",
+      "copySnippetContent": "Copy snippet content",
+      "copyHttpUrl": "Copy URL"
+    },
+    "footer": {
+      "open": "Open",
+      "jump": "Jump",
+      "actions": "Actions",
+      "run": "Run",
+      "back": "Back"
+    }
+  },
   "spaces": {
     "label": "Spaces",
     "code": {
@@ -31,6 +90,136 @@
       "newSheet": "New Sheet",
       "untitled": "Untitled",
       "currencyUnavailable": "Currency rates service unavailable"
+    },
+    "http": {
+      "label": "HTTP",
+      "tooltip": "HTTP client",
+      "title": "HTTP Client",
+      "allRequests": "All Requests",
+      "untitledRequest": "Untitled request",
+      "empty": "No requests yet",
+      "noUrl": "No URL",
+      "action": {
+        "import": "Import",
+        "newRequest": "New request",
+        "newEnvironment": "New environment",
+        "manageEnvironments": "Manage environments",
+        "deleteEnvironment": "Delete environment"
+      },
+      "environments": {
+        "title": "Environments",
+        "none": "No environment",
+        "activeTooltip": "Environment: {{name}}",
+        "selectTooltip": "Select environment",
+        "manage": "Manage environments…",
+        "empty": "No environments yet",
+        "untitled": "Untitled environment",
+        "namePlaceholder": "Environment name",
+        "variables": "Variables",
+        "noVariables": "No variables yet",
+        "varKey": "Variable",
+        "varValue": "Value",
+        "addVariable": "Add variable",
+        "noEnvironmentSelected": "Select an environment to edit its variables"
+      },
+      "import": {
+        "title": "Import HTTP collection",
+        "description": "Import OpenAPI JSON/YAML, Postman Collection v2.1 JSON, Postman Environment JSON, and Bruno OpenCollection YAML or ZIP files.",
+        "formats": "Select import files",
+        "postman": "Postman Collection",
+        "postmanHint": "Choose one collection JSON and, optionally, an environment JSON.",
+        "fileHint": "Drag files here, or choose files to preview the import.",
+        "chooseFiles": "Choose files",
+        "previewing": "Reading files",
+        "collections": "Collections",
+        "requests": "Requests",
+        "environments": "Environments",
+        "collectionMeta": "{{folders}} folders, {{requests}} requests",
+        "variablesMeta": "{{variables}} variables",
+        "plainTextNotice": "Environment variables are stored as plain text in the vault.",
+        "warnings": "Warnings",
+        "import": "Import",
+        "importing": "Importing",
+        "imported": "Imported {{requests}} requests in {{collections}} collections.",
+        "createdFolders": "Created: {{names}}",
+        "error": "Import failed"
+      },
+      "editor": {
+        "noSelected": "No request selected",
+        "namePlaceholder": "Request name",
+        "urlPlaceholder": "Enter request URL",
+        "send": "Send",
+        "tabs": {
+          "params": "Params",
+          "headers": "Headers",
+          "body": "Body",
+          "auth": "Auth",
+          "description": "Description"
+        },
+        "keyValue": {
+          "key": "Key",
+          "value": "Value",
+          "description": "Description",
+          "addRow": "Add row",
+          "empty": "No entries"
+        },
+        "body": {
+          "typeNone": "None",
+          "typeJson": "JSON",
+          "typeText": "Text",
+          "typeFormUrlencoded": "Form URL-encoded",
+          "typeMultipart": "Multipart form-data",
+          "placeholder": "Enter request body",
+          "fieldType": {
+            "text": "Text",
+            "file": "File"
+          },
+          "filePlaceholder": "Select file path",
+          "jsonInvalid": "Invalid JSON"
+        },
+        "auth": {
+          "typeNone": "No Auth",
+          "typeBearer": "Bearer Token",
+          "typeBasic": "Basic Auth",
+          "token": "Token",
+          "tokenPlaceholder": "Enter token",
+          "username": "Username",
+          "usernamePlaceholder": "Enter username",
+          "password": "Password",
+          "passwordPlaceholder": "Enter password"
+        },
+        "description": {
+          "placeholder": "Add a description for this request"
+        },
+        "panels": {
+          "preview": "Preview",
+          "response": "Response"
+        },
+        "preview": {
+          "empty": "No request preview",
+          "formats": {
+            "http": "HTTP",
+            "curl": "cURL"
+          }
+        },
+        "response": {
+          "empty": "No response yet",
+          "executing": "Sending request",
+          "status": "Status",
+          "time": "Time",
+          "size": "Size",
+          "tabs": {
+            "body": "Body",
+            "headers": "Headers"
+          },
+          "error": "Request failed",
+          "noResponse": "No response received",
+          "truncated": "Response truncated",
+          "binaryNotice": "Binary response not displayed",
+          "copy": "Copy",
+          "copied": "Copied"
+        }
+      }
     },
     "tools": {
       "label": "Tools",
@@ -203,8 +392,12 @@
       "toHtml": "Export to HTML"
     },
     "copy": {
+      "snippet": "Copy Snippet",
       "snippetLink": "Copy Snippet Link",
-      "noteLink": "Copy Note Link"
+      "note": "Copy Note",
+      "noteLink": "Copy Note Link",
+      "request": "Copy Request",
+      "requestLink": "Copy Request Link"
     },
     "select": {
       "directory": "Select Directory"
@@ -212,15 +405,17 @@
   },
   "internalLinks": {
     "picker": {
-      "searchPlaceholder": "Search snippets and notes...",
+      "searchPlaceholder": "Search snippets, HTTP requests, and notes...",
       "emptyResults": "No results",
       "groups": {
         "snippets": "Snippets",
+        "httpRequests": "HTTP Requests",
         "notes": "Notes"
       }
     },
     "missing": {
       "snippet": "Snippet not found",
+      "httpRequest": "HTTP request not found",
       "note": "Note not found"
     }
   },

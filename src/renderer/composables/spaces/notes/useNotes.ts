@@ -1,4 +1,5 @@
 import { useDialog } from '@/composables/useDialog'
+import { useDonations } from '@/composables/useDonations'
 import { markPersistedStorageMutation } from '@/composables/useStorageMutation'
 import { i18n } from '@/electron'
 import { getContiguousSelection } from '@/utils'
@@ -8,7 +9,7 @@ import { useNoteContent } from './useNoteContent'
 import { useNotesApp } from './useNotesApp'
 import { isSearch, notesBySearch, searchQuery } from './useNoteSearch'
 
-const { notesState, isFocusedNoteName } = useNotesApp()
+const { notesState, focusNoteNameInput } = useNotesApp()
 
 // --- Types ---
 // These mirror the generated API types that will exist after api:generate.
@@ -55,6 +56,10 @@ interface NotesUpdate {
   description?: string | null
   isDeleted?: number
   isFavorites?: number
+}
+
+interface CreateNotePayload {
+  name?: string
 }
 
 // --- Module-level state ---
@@ -196,13 +201,18 @@ function getNextIndexedName(baseName: string, existingNames: string[]): string {
 async function getNoteNamesForCreate(
   folderId: number | null,
 ): Promise<string[]> {
-  const query: NotesQuery
-    = folderId !== null
-      ? { folderId, isDeleted: 0 }
-      : { isInbox: 1, isDeleted: 0 }
+  const query: NotesQuery = { isDeleted: 0 }
+  if (folderId !== null) {
+    query.folderId = folderId
+  }
+  else {
+    query.isInbox = 1
+  }
   const { data } = await api.notes.getNotes(query)
 
-  return data.map((note: NoteRecord) => note.name)
+  return data
+    .filter((note: NoteRecord) => (note.folder?.id ?? null) === folderId)
+    .map((note: NoteRecord) => note.name)
 }
 
 // --- CRUD ---
@@ -233,20 +243,29 @@ async function withNotesLoading<T>(loader: () => Promise<T>): Promise<T> {
   }
 }
 
-async function createNote() {
+async function createNote(payload?: CreateNotePayload) {
   try {
     const targetFolderId = notesState.folderId || null
     const existingNames = await getNoteNamesForCreate(targetFolderId)
-    const nextNoteName = getNextIndexedName(
-      i18n.t('notes.untitled'),
-      existingNames,
+    const requestedName = payload?.name?.trim()
+    const hasRequestedName = existingNames.some(
+      name => name.trim().toLowerCase() === requestedName?.toLowerCase(),
     )
+    const nextNoteName
+      = requestedName && !hasRequestedName
+        ? requestedName
+        : getNextIndexedName(
+            requestedName || i18n.t('notes.untitled'),
+            existingNames,
+          )
 
     markPersistedStorageMutation()
-    await api.notes.postNotes({
+    const { data } = await api.notes.postNotes({
       name: nextNoteName,
       folderId: targetFolderId,
     })
+
+    useDonations().incrementCreated('notes')
 
     if (
       notesState.libraryFilter === LibraryFilter.Trash
@@ -256,16 +275,25 @@ async function createNote() {
     }
 
     await getNotes(queryByLibraryOrFolderOrSearch.value)
+
+    return Number(data.id)
   }
   catch (error) {
     console.error(error)
   }
 }
 
-async function createNoteAndSelect() {
-  await createNote()
-  selectFirstNote()
-  isFocusedNoteName.value = true
+async function createNoteAndSelect(payload?: CreateNotePayload) {
+  const id = await createNote(payload)
+
+  if (id) {
+    selectNote(id)
+  }
+  else {
+    selectFirstNote()
+  }
+
+  await focusNoteNameInput()
 }
 
 async function updateNote(noteId: number, data: NotesUpdate) {

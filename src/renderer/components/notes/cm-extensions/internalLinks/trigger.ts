@@ -5,7 +5,12 @@ import { api } from '@/services/api'
 import { Prec } from '@codemirror/state'
 import { keymap, ViewPlugin } from '@codemirror/view'
 import { reactive, shallowRef } from 'vue'
-import { buildLinkMarkdown, parseInternalLink } from './parser'
+import { buildNoteFolderPathMap } from './folderPath'
+import {
+  buildLinkMarkdown,
+  normalizeInternalLinkLookupKey,
+  parseInternalLink,
+} from './parser'
 
 type InternalLinksMode = 'raw' | 'livePreview' | 'preview'
 
@@ -24,6 +29,7 @@ export interface InternalLinkPickerItem {
   name: string
   type: InternalLinkType
   locationLabel: string
+  folderPath?: string
 }
 
 interface InternalLinkTriggerOptions {
@@ -107,7 +113,7 @@ export function findInternalLinkSearchMatch(
 }
 
 function isStoredInternalLinkPayload(payload: string): boolean {
-  return /^(?:snippet|note):\d+\|.*$/.test(payload)
+  return /^(?:snippet|note|http-request):\d+\|.*$/.test(payload)
 }
 
 export function getInternalLinkTokenState(
@@ -177,17 +183,36 @@ export function getInternalLinkTokenState(
   }
 }
 
+export function pickShortestUniqueInsertTarget(
+  selected: InternalLinkPickerItem,
+  items: InternalLinkPickerItem[],
+): string {
+  if (selected.type === 'snippet') {
+    return selected.name
+  }
+
+  const selectedKey = normalizeInternalLinkLookupKey(selected.name)
+  const hasNameCollision = items.some(
+    candidate =>
+      candidate !== selected
+      && candidate.type === selected.type
+      && normalizeInternalLinkLookupKey(candidate.name) === selectedKey,
+  )
+
+  if (!hasNameCollision || !selected.folderPath) {
+    return selected.name
+  }
+
+  return `${selected.folderPath}/${selected.name}`
+}
+
 export function buildInternalLinkInsertChange(
   range: InternalLinkSearchMatch,
-  item: {
-    id: number
-    label: string
-    type: InternalLinkType
-  },
+  target: string,
 ) {
   return {
     from: range.from,
-    insert: buildLinkMarkdown(item.label),
+    insert: buildLinkMarkdown(target),
     to: range.to,
   }
 }
@@ -205,10 +230,22 @@ function getLocationLabel(entity: SearchableEntity): string {
 }
 
 async function searchItems(query: string): Promise<InternalLinkPickerItem[]> {
-  const [{ data: snippets }, { data: notes }] = await Promise.all([
+  const [
+    { data: snippets },
+    { data: notes },
+    { data: noteFolders },
+    { data: httpRequests },
+    { data: httpFolders },
+  ] = await Promise.all([
     api.snippets.getSnippets({ search: query, isDeleted: 0 }),
     api.notes.getNotes({ search: query, isDeleted: 0 }),
+    api.noteFolders.getNoteFolders(),
+    api.httpRequests.getHttpRequests({ search: query }),
+    api.httpFolders.getHttpFolders(),
   ])
+
+  const folderPathById = buildNoteFolderPathMap(noteFolders)
+  const httpFolderPathById = buildNoteFolderPathMap(httpFolders)
 
   return [
     ...snippets.map(snippet => ({
@@ -217,7 +254,21 @@ async function searchItems(query: string): Promise<InternalLinkPickerItem[]> {
       name: snippet.name,
       type: 'snippet' as const,
     })),
+    ...httpRequests.map(request => ({
+      folderPath:
+        request.folderId === null
+          ? ''
+          : (httpFolderPathById.get(request.folderId) ?? ''),
+      id: request.id,
+      locationLabel:
+        request.folderId === null
+          ? i18n.t('spaces.http.title')
+          : (httpFolderPathById.get(request.folderId) ?? ''),
+      name: request.name,
+      type: 'http-request' as const,
+    })),
     ...notes.map(note => ({
+      folderPath: note.folder ? folderPathById.get(note.folder.id) : undefined,
       id: note.id,
       locationLabel: getLocationLabel(note),
       name: note.name,
@@ -354,11 +405,18 @@ export function selectInternalLinksPickerItem(index?: number) {
     return
   }
 
-  const change = buildInternalLinkInsertChange(range, {
-    id: item.id,
-    label: item.name,
-    type: item.type,
-  })
+  const target = pickShortestUniqueInsertTarget(
+    item,
+    internalLinksPickerState.items,
+  )
+  const change
+    = item.type === 'http-request'
+      ? {
+          from: range.from,
+          insert: buildLinkMarkdown(`http-request:${item.id}`, item.name),
+          to: range.to,
+        }
+      : buildInternalLinkInsertChange(range, target)
 
   view.dispatch({
     changes: change,

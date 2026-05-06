@@ -82,6 +82,7 @@ export default defineConfig({
 
     nav: [
       { text: 'Documentation', link: '/documentation/' },
+      { text: 'Sponsor', link: '/sponsor/' },
       { text: 'Donate', link: '/donate/' },
       {
         text: version,
@@ -98,6 +99,7 @@ export default defineConfig({
           text: 'General',
           items: [
             { text: 'Overview', link: '/documentation/' },
+            { text: 'Command Palette', link: '/documentation/command-palette' },
             { text: 'Storage', link: '/documentation/storage' },
             { text: 'Sync', link: '/documentation/sync' },
             { text: 'Themes', link: '/documentation/themes' },
@@ -124,10 +126,21 @@ export default defineConfig({
             { text: 'Folders', link: '/documentation/notes/folders' },
             { text: 'Tags', link: '/documentation/notes/tags' },
             { text: 'Internal Links', link: '/documentation/notes/internal-links' },
+            { text: 'Images', link: '/documentation/notes/images' },
+            { text: 'Callouts', link: '/documentation/notes/callouts' },
             { text: 'Mermaid', link: '/documentation/notes/mermaid' },
             { text: 'Mindmap', link: '/documentation/notes/mindmap' },
             { text: 'Presentation', link: '/documentation/notes/presentation' },
             { text: 'Search', link: '/documentation/notes/search' },
+          ],
+        },
+        {
+          text: 'HTTP',
+          items: [
+            { text: 'HTTP Client', link: '/documentation/http/' },
+            { text: 'Requests', link: '/documentation/http/requests' },
+            { text: 'Environments', link: '/documentation/http/environments' },
+            { text: 'Importing Collections', link: '/documentation/http/importing' },
           ],
         },
         {

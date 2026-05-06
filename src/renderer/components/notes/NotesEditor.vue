@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { NotesEditorMode } from '@/composables/spaces/notes/useNotesApp'
+import { createCodeHighlight } from '@/components/cm-extensions/codeHighlight'
+import { editorScrollbarTheme } from '@/components/cm-extensions/scrollbarTheme'
 import {
   applyPendingNavigationUIStateForNote,
   registerNavigationNoteUIState,
@@ -18,8 +20,7 @@ import {
   lineNumbers as lineNumbersExtension,
   placeholder,
 } from '@codemirror/view'
-import { GFM } from '@lezer/markdown'
-import { createCodeHighlight } from './cm-extensions/codeHighlight'
+import { GFM, type MarkdownConfig } from '@lezer/markdown'
 import { editorFocusExtension } from './cm-extensions/editorFocus'
 import { createExternalLinksNavigation } from './cm-extensions/externalLinks'
 import { createHideMarkup } from './cm-extensions/hideMarkup'
@@ -29,12 +30,13 @@ import {
 } from './cm-extensions/imageBlocks'
 import { createImageInsert } from './cm-extensions/imageInsert'
 import { createInternalLinks } from './cm-extensions/internalLinks'
-import { listIndent } from './cm-extensions/listIndent'
+import { createListIndent } from './cm-extensions/listIndent'
 import { createListLineIndent } from './cm-extensions/listLineIndent'
 import { createMarkdownDecorations } from './cm-extensions/markdownDecorations'
+import { Highlight } from './cm-extensions/markdownHighlight'
+import { markdownShortcuts } from './cm-extensions/markdownShortcuts'
 import { createMermaidBlocks } from './cm-extensions/mermaidBlocks'
 import { moveSelectionToAdjacentMermaidSource } from './cm-extensions/mermaidNavigation'
-import { notesEditorScrollbarTheme } from './cm-extensions/scrollbarTheme'
 import { createTableBlocks } from './cm-extensions/tableBlocks'
 import { moveSelectionToAdjacentTableSource } from './cm-extensions/tableNavigation'
 import { createNotesEditTheme } from './theme'
@@ -146,7 +148,7 @@ const presentationTheme = EditorView.theme({
   '.cm-gutters': {
     display: 'none',
   },
-  ...notesEditorScrollbarTheme,
+  ...editorScrollbarTheme,
   '.cm-line': {
     padding: '0',
   },
@@ -164,10 +166,15 @@ const presentationTheme = EditorView.theme({
   },
 })
 
+const NoSetextHeading: MarkdownConfig = {
+  remove: ['SetextHeading'],
+}
+
 function createEditorState(doc: string): EditorState {
   const raw = isRawMode.value
   const preview = isPreviewMode.value
   const editable = !preview
+  const notesIndentUnit = ' '.repeat(Math.max(1, notesSettings.indentSize))
 
   const extensions: Extension[] = [
     props.presentation
@@ -175,18 +182,21 @@ function createEditorState(doc: string): EditorState {
       : createNotesEditTheme(raw, notesSettings),
     EditorView.lineWrapping,
     history(),
-    Prec.highest(keymap.of(editable && !raw ? listIndent : [])),
+    Prec.highest(
+      keymap.of(editable ? createListIndent({ indent: notesIndentUnit }) : []),
+    ),
     keymap.of([
+      ...(editable ? markdownShortcuts : []),
       ...(editable && !raw ? navigationKeymap : []),
       ...defaultKeymap,
       ...historyKeymap,
     ]),
     editorFocusExtension,
-    indentUnit.of(' '.repeat(notesSettings.indentSize)),
+    indentUnit.of(notesIndentUnit),
     markdown({
       base: markdownLanguage,
       codeLanguages: languages,
-      extensions: GFM,
+      extensions: [GFM, Highlight, NoSetextHeading],
     }),
     createCodeHighlight(isDark.value),
   ]

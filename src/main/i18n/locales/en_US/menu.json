@@ -60,7 +60,8 @@
   },
   "editor": {
     "label": "Editor",
-    "copy": "Copy Snippet to Clipboard",
+    "copySnippet": "Copy Snippet",
+    "copyNote": "Copy Note",
     "format": "Format",
     "mode": "Mode",
     "modeRaw": "Raw",
@@ -69,6 +70,7 @@
     "previewCode": "Preview Code",
     "previewScreenshot": "Preview Screenshot",
     "previewJson": "Preview JSON",
+    "sendRequest": "Send Request",
     "fontSizeIncrease": "Font Size Increase",
     "fontSizeDecrease": "Font Size Decrease",
     "fontSizeReset": "Font Size Reset"

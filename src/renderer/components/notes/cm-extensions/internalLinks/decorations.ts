@@ -10,10 +10,12 @@ import { api } from '@/services/api'
 import { StateEffect } from '@codemirror/state'
 import { Decoration, ViewPlugin, WidgetType } from '@codemirror/view'
 import { entityCache } from './cache'
+import { buildNoteFolderPathMap } from './folderPath'
 import {
   findInternalLinks,
   normalizeInternalLinkLookupKey,
   resolveInternalLinkTargetByTitle,
+  splitInternalLinkTarget,
 } from './parser'
 
 type InternalLinksMode = 'raw' | 'livePreview' | 'preview'
@@ -79,9 +81,20 @@ function createTypeIcon(type: InternalLinkType): SVGSVGElement {
     'd',
     type === 'snippet'
       ? 'M8 9l-3 3 3 3M16 9l3 3-3 3M13 6l-2 12'
-      : 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z',
+      : type === 'http-request'
+        ? 'm22 2-7 20-4-9-9-4Z'
+        : 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z',
   )
   svg.append(path)
+
+  if (type === 'http-request') {
+    const second = document.createElementNS(
+      'http://www.w3.org/2000/svg',
+      'path',
+    )
+    second.setAttribute('d', 'M22 2 11 13')
+    svg.append(second)
+  }
 
   if (type === 'note') {
     const second = document.createElementNS(
@@ -131,14 +144,16 @@ class InternalLinkWidget extends WidgetType {
 
     const label = document.createElement('span')
     label.className = 'cm-internal-link__label'
-    label.textContent = this.link.label
+    label.textContent = this.link.alias ?? this.link.basename
     root.append(label)
 
     if (this.status === 'broken') {
       root.title = i18n.t(
         this.resolvedTarget?.type === 'snippet'
           ? 'internalLinks.missing.snippet'
-          : 'internalLinks.missing.note',
+          : this.resolvedTarget?.type === 'http-request'
+            ? 'internalLinks.missing.httpRequest'
+            : 'internalLinks.missing.note',
       )
     }
 
@@ -188,6 +203,26 @@ export async function fetchInternalLinkEntity(
       }
     }
 
+    if (type === 'http-request') {
+      const { data } = await api.httpRequests.getHttpRequestsById(String(id))
+
+      return {
+        exists: true,
+        data: {
+          folder: null,
+          id: data.id,
+          isDeleted: 0,
+          name: data.name,
+          request: {
+            description: data.description,
+            method: data.method,
+            url: data.url,
+          },
+          type,
+        },
+      }
+    }
+
     const { data } = await api.notes.getNotesById(String(id))
 
     if (data.isDeleted) {
@@ -215,10 +250,27 @@ async function resolveInternalLinkByTitle(
   title: string,
 ): Promise<CachedEntity> {
   try {
-    const [{ data: snippets }, { data: notes }] = await Promise.all([
-      api.snippets.getSnippets({ search: title, isDeleted: 0 }),
-      api.notes.getNotes({ search: title, isDeleted: 0 }),
+    const { basename } = splitInternalLinkTarget(title)
+    if (!basename) {
+      return { exists: false }
+    }
+
+    const [
+      { data: snippets },
+      { data: notes },
+      { data: noteFolders },
+      { data: httpRequests },
+      { data: httpFolders },
+    ] = await Promise.all([
+      api.snippets.getSnippets({ search: basename, isDeleted: 0 }),
+      api.notes.getNotes({ search: basename, isDeleted: 0 }),
+      api.noteFolders.getNoteFolders(),
+      api.httpRequests.getHttpRequests({ search: basename }),
+      api.httpFolders.getHttpFolders(),
     ])
+
+    const folderPathById = buildNoteFolderPathMap(noteFolders)
+    const httpFolderPathById = buildNoteFolderPathMap(httpFolders)
 
     const resolvedTarget = resolveInternalLinkTargetByTitle(title, [
       ...snippets.map<InternalLinkLookupItem>(snippet => ({
@@ -227,9 +279,21 @@ async function resolveInternalLinkByTitle(
         type: 'snippet',
       })),
       ...notes.map<InternalLinkLookupItem>(note => ({
+        folderPath: note.folder
+          ? folderPathById.get(note.folder.id)
+          : undefined,
         id: note.id,
         name: note.name,
         type: 'note',
+      })),
+      ...httpRequests.map<InternalLinkLookupItem>(request => ({
+        folderPath:
+          request.folderId === null
+            ? ''
+            : (httpFolderPathById.get(request.folderId) ?? ''),
+        id: request.id,
+        name: request.name,
+        type: 'http-request',
       })),
     ])
 
@@ -257,6 +321,31 @@ async function resolveInternalLinkByTitle(
           isDeleted: snippet.isDeleted,
           name: snippet.name,
           type: 'snippet',
+        },
+      }
+    }
+
+    if (resolvedTarget.type === 'http-request') {
+      const request = httpRequests.find(
+        item => item.id === resolvedTarget.id,
+      )
+      if (!request) {
+        return { exists: false }
+      }
+
+      return {
+        exists: true,
+        data: {
+          folder: null,
+          id: request.id,
+          isDeleted: 0,
+          name: request.name,
+          request: {
+            description: request.description,
+            method: request.method,
+            url: request.url,
+          },
+          type: 'http-request',
         },
       }
     }

@@ -60,7 +60,8 @@
   },
   "editor": {
     "label": "Редактор",
-    "copy": "Копировать сниппет в буфер обмена",
+    "copySnippet": "Копировать сниппет",
+    "copyNote": "Копировать заметку",
     "format": "Форматировать",
     "mode": "Режим",
     "modeRaw": "Исходный",
@@ -69,6 +70,7 @@
     "previewCode": "Предпросмотр кода",
     "previewScreenshot": "Предпросмотр скриншота",
     "previewJson": "Предпросмотр JSON",
+    "sendRequest": "Отправить запрос",
     "fontSizeIncrease": "Увеличить размер шрифта",
     "fontSizeDecrease": "Уменьшить размер шрифта",
     "fontSizeReset": "Сбросить размер шрифта"

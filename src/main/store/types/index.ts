@@ -16,6 +16,12 @@ export interface NotesState {
   libraryFilter?: string
 }
 
+export interface HttpState {
+  requestId?: number
+  folderId?: number
+  libraryFilter?: string
+}
+
 export type NotesRouteName =
   | 'notes-space'
   | 'notes-space/dashboard'
@@ -29,7 +35,71 @@ export interface NotesDashboardWidgets {
   topLinked: boolean
 }
 
-export type SpaceId = 'code' | 'tools' | 'math' | 'notes'
+export type SpaceId = 'code' | 'tools' | 'math' | 'notes' | 'http'
+export type CommandPaletteRecentTarget =
+  | 'space'
+  | 'snippet'
+  | 'note'
+  | 'http-request'
+export type CommandPaletteUsageTarget = CommandPaletteRecentTarget | 'command'
+
+export interface CommandPaletteRecentEntry {
+  id: string
+  target: CommandPaletteRecentTarget
+  targetId: string
+  title: string
+  subtitle: string
+  spaceId: SpaceId
+  openedAt: number
+}
+
+export interface CommandPaletteUsageEntry {
+  id: string
+  target: CommandPaletteUsageTarget
+  targetId: string
+  openedAt: number
+  openCount: number
+  lastQuery?: string
+}
+
+export interface DonationsState {
+  lastActiveDay: string
+  currentStreak: number
+  copies: {
+    code: number
+    http: number
+    notes: number
+    math: number
+    tools: number
+  }
+  created: {
+    code: number
+    http: number
+    notes: number
+    math: number
+  }
+  sent: {
+    http: number
+  }
+  lastShownCopyMilestones: {
+    code: number
+    http: number
+    notes: number
+    math: number
+    tools: number
+  }
+  lastShownCreatedMilestones: {
+    code: number
+    http: number
+    notes: number
+    math: number
+  }
+  lastShownSentMilestones: {
+    http: number
+  }
+  shownStreakMilestones: number[]
+  lastGreetingDay: string
+}
 
 export interface AppStore {
   window: {
@@ -61,10 +131,24 @@ export interface AppStore {
       twoPanel?: number
     }
   }
+  http: {
+    selection: HttpState
+    layout: {
+      mode: SpaceLayoutMode
+      environmentsListHeight: number
+      threePanel?: number[]
+      twoPanel?: number
+      responsePanelHeight?: number
+    }
+  }
   notifications: {
-    nextDonateAt?: number
     lastNotifiedUpdateVersion: string
   }
+  commandPalette: {
+    recent: CommandPaletteRecentEntry[]
+    usage: CommandPaletteUsageEntry[]
+  }
+  donations: DonationsState
   activeSpaceId: SpaceId
 }
 
@@ -104,6 +188,12 @@ export interface MathSettings {
   dateFormat: 'numeric' | 'short' | 'long'
 }
 
+export interface HttpSettings {
+  wrapLines: boolean
+  defaultPreviewFormat: 'http' | 'curl'
+  autoSwitchToResponse: boolean
+}
+
 export interface PreferencesStore {
   appearance: {
     theme: string
@@ -123,6 +213,7 @@ export interface PreferencesStore {
     markdown: MarkdownSettings
   }
   math: MathSettings
+  http: HttpSettings
 }
 
 export interface MathSheet {

@@ -10,6 +10,7 @@ import type {
 } from '../../../contracts'
 import path from 'node:path'
 import {
+  assertUniqueSiblingEntryName,
   createSnippetRecord,
   findFolderById,
   findSnippetByContentId,
@@ -49,12 +50,18 @@ export function createSnippetsStorage(): SnippetsStorage {
       const paths = getPaths(getVaultPath())
       const { state, snippets } = getRuntimeCache(paths)
 
-      const searchSnippetIds = query.search?.trim()
-        ? getSnippetIdsBySearchQuery(snippets, query.search)
-        : null
+      const search = query.search?.trim().toLowerCase()
+      const searchSnippetIds
+        = search && !query.searchNameOnly
+          ? getSnippetIdsBySearchQuery(snippets, search)
+          : null
       const result = filterAndSortByQuery({
         entities: snippets,
         filters: [
+          snippet =>
+            !search
+            || !query.searchNameOnly
+            || snippet.name.toLowerCase().includes(search),
           snippet => !searchSnippetIds || searchSnippetIds.has(snippet.id),
           (snippet, query) =>
             !query.folderId || snippet.folderId === query.folderId,
@@ -90,6 +97,7 @@ export function createSnippetsStorage(): SnippetsStorage {
 
       const name = validateEntryName(input.name, 'snippet')
       const folderId = input.folderId ?? null
+      assertUniqueSiblingEntryName(snippets, folderId, name, 'snippet')
       const result = createEntityInStateAndDisk<MarkdownSnippet>({
         createEntity: ({ folderId, id, name, now }) => ({
           contents: [],
@@ -159,6 +167,7 @@ export function createSnippetsStorage(): SnippetsStorage {
       }
 
       const previousPath = snippet.filePath
+      const previousFolderId = snippet.folderId
       const updateResult = applyEntityUpdateFields({
         entity: snippet,
         fieldPresence: 'in',
@@ -167,8 +176,25 @@ export function createSnippetsStorage(): SnippetsStorage {
         normalizeFlag: value => value || 0,
         onMissingFolder: () =>
           throwStorageError('FOLDER_NOT_FOUND', 'Folder not found'),
-        resolveName: (inputName, currentName) =>
-          validateEntryName(inputName || currentName, 'snippet'),
+        resolveName: (inputName, currentName) => {
+          const next = validateEntryName(inputName || currentName, 'snippet')
+          const isFolderChanging
+            = 'folderId' in input
+              && (input.folderId ?? null) !== previousFolderId
+          if (
+            !isFolderChanging
+            && next.toLowerCase() !== currentName.toLowerCase()
+          ) {
+            assertUniqueSiblingEntryName(
+              snippets,
+              previousFolderId,
+              next,
+              'snippet',
+              snippet.id,
+            )
+          }
+          return next
+        },
       })
       if (!updateResult.hasAnyField) {
         return {

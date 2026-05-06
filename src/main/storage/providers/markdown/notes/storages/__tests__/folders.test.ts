@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ensureNotesStateFile } from '../../runtime/state'
 import { resetNotesRuntimeCache } from '../../runtime/sync'
 import { createNotesFoldersStorage } from '../folders'
+import { createNotesNotesStorage } from '../notes'
 
 let tempVaultPath = ''
 
@@ -103,20 +104,20 @@ describe('folders storage validations', () => {
     expect(result).toEqual({ invalidInput: true, notFound: false })
   })
 
-  it('moving folder to sibling with same name throws NAME_CONFLICT', () => {
+  it('moving folder to sibling with same name auto-renames', () => {
     const storage = createNotesFoldersStorage()
 
-    // Create a parent folder
     const { id: parentId } = storage.createFolder({ name: 'Parent' })
 
-    // Create two folders: one at root named "Dupe", one inside Parent named "Dupe"
     storage.createFolder({ name: 'Dupe', parentId })
     const { id: rootDupeId } = storage.createFolder({ name: 'Dupe' })
 
-    // Move rootDupe into Parent — should conflict with existing "Dupe" child
-    expect(() => storage.updateFolder(rootDupeId, { parentId })).toThrow(
-      'NAME_CONFLICT',
-    )
+    storage.updateFolder(rootDupeId, { parentId })
+
+    const moved = storage.getFolders().find(f => f.id === rootDupeId)
+    expect(moved?.parentId).toBe(parentId)
+    expect(moved?.name.toLowerCase()).not.toBe('dupe')
+    expect(moved?.name.toLowerCase()).toContain('dupe')
   })
 
   it('rename to existing disk directory throws NAME_CONFLICT', () => {
@@ -130,5 +131,86 @@ describe('folders storage validations', () => {
     expect(() => storage.updateFolder(id, { name: 'Target' })).toThrow(
       'NAME_CONFLICT',
     )
+  })
+
+  it('rewrites path-based backlinks when a folder is renamed', () => {
+    const folders = createNotesFoldersStorage()
+    const notes = createNotesNotesStorage()
+
+    const folderA = folders.createFolder({ name: 'Folder A' })
+    const folderB = folders.createFolder({ name: 'Folder B' })
+
+    notes.createNote({ name: 'Foo', folderId: folderA.id })
+    notes.createNote({ name: 'Foo', folderId: folderB.id })
+
+    const linker = notes.createNote({ name: 'Linker' })
+    notes.updateNoteContent(linker.id, 'See [[Folder A/Foo]] here')
+
+    folders.updateFolder(folderA.id, { name: 'Renamed' })
+
+    expect(notes.getNoteById(linker.id)?.content).toBe(
+      'See [[Renamed/Foo]] here',
+    )
+  })
+
+  it('rewrites path-based backlinks when a folder is moved into another', () => {
+    const folders = createNotesFoldersStorage()
+    const notes = createNotesNotesStorage()
+
+    const root = folders.createFolder({ name: 'Root' })
+    const folderA = folders.createFolder({ name: 'Folder A' })
+    const folderB = folders.createFolder({ name: 'Folder B' })
+
+    notes.createNote({ name: 'Foo', folderId: folderA.id })
+    notes.createNote({ name: 'Foo', folderId: folderB.id })
+
+    const linker = notes.createNote({ name: 'Linker' })
+    notes.updateNoteContent(linker.id, 'See [[Folder A/Foo]] here')
+
+    folders.updateFolder(folderA.id, { parentId: root.id })
+
+    expect(notes.getNoteById(linker.id)?.content).toBe(
+      'See [[Root/Folder A/Foo]] here',
+    )
+  })
+
+  it('cascades path rewrite when an ancestor folder is renamed', () => {
+    const folders = createNotesFoldersStorage()
+    const notes = createNotesNotesStorage()
+
+    const projects = folders.createFolder({ name: 'Projects' })
+    const child = folders.createFolder({
+      name: 'Active',
+      parentId: projects.id,
+    })
+    const other = folders.createFolder({ name: 'Other' })
+
+    notes.createNote({ name: 'Foo', folderId: child.id })
+    notes.createNote({ name: 'Foo', folderId: other.id })
+
+    const linker = notes.createNote({ name: 'Linker' })
+    notes.updateNoteContent(linker.id, 'See [[Projects/Active/Foo]] here')
+
+    folders.updateFolder(projects.id, { name: 'Workspace' })
+
+    expect(notes.getNoteById(linker.id)?.content).toBe(
+      'See [[Workspace/Active/Foo]] here',
+    )
+  })
+
+  it('leaves bare backlinks unchanged when a folder is renamed', () => {
+    const folders = createNotesFoldersStorage()
+    const notes = createNotesNotesStorage()
+
+    const folderA = folders.createFolder({ name: 'Folder A' })
+
+    notes.createNote({ name: 'Foo', folderId: folderA.id })
+
+    const linker = notes.createNote({ name: 'Linker' })
+    notes.updateNoteContent(linker.id, 'See [[Foo]] here')
+
+    folders.updateFolder(folderA.id, { name: 'Renamed' })
+
+    expect(notes.getNoteById(linker.id)?.content).toBe('See [[Foo]] here')
   })
 })
