@@ -3,10 +3,12 @@ import type { TreeNode as TreeNodeType } from '@/components/ui/tree/types'
 import * as ContextMenu from '@/components/ui/shadcn/context-menu'
 import { Tree as UiTree } from '@/components/ui/tree'
 import {
+  useDeleteShortcut,
   useHttpApp,
   useHttpEnvironments,
   useHttpFolderDragDrop,
   useHttpFolders,
+  useHttpImportDialog,
   useHttpRequests,
   useHttpSearch,
   useResizeHandle,
@@ -30,6 +32,7 @@ const {
 } = useHttpApp()
 const {
   createHttpFolderAndSelect,
+  deleteSelectedHttpFolders,
   folders,
   getHttpFolders,
   updateHttpFolder,
@@ -42,9 +45,9 @@ const { getHttpRequests, isRestoreStateBlocked, selectFirstRequest }
 const { getHttpEnvironments } = useHttpEnvironments()
 const { clearSearch } = useHttpSearch()
 const { onDragNode, onExternalDrop } = useHttpFolderDragDrop()
+const { isHttpImportDialogOpen, openHttpImportDialog } = useHttpImportDialog()
 
 const environmentsHandleRef = ref<HTMLElement>()
-const isImportDialogOpen = ref(false)
 
 function normalizeEnvironmentsHeight(value: number | undefined) {
   if (
@@ -228,6 +231,12 @@ async function onImported() {
   await getHttpRequests()
   await getHttpEnvironments()
 }
+
+useDeleteShortcut({
+  rootSelector: '[data-http-folders-tree]',
+  isEnabled: () => focusedFolderId.value !== undefined,
+  onDelete: () => deleteSelectedHttpFolders(focusedFolderId.value),
+})
 </script>
 
 <template>
@@ -244,14 +253,14 @@ async function onImported() {
       <template #actions>
         <UiActionButton
           :tooltip="i18n.t('spaces.http.action.import')"
-          @click="isImportDialogOpen = true"
+          @click="openHttpImportDialog"
         >
           <Upload class="h-4 w-4" />
         </UiActionButton>
       </template>
     </SidebarHeader>
     <HttpImportDialog
-      v-model:open="isImportDialogOpen"
+      v-model:open="isHttpImportDialogOpen"
       @imported="onImported"
     />
     <HttpSidebarLibrary />
@@ -266,7 +275,10 @@ async function onImported() {
           </UiActionButton>
         </template>
       </SidebarSectionHeader>
-      <div class="scrollbar min-h-0 flex-1 overflow-y-auto">
+      <div
+        data-http-folders-tree
+        class="scrollbar min-h-0 flex-1 overflow-y-auto"
+      >
         <ContextMenu.ContextMenu>
           <ContextMenu.ContextMenuTrigger as-child>
             <UiTree

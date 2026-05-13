@@ -1,6 +1,6 @@
 {
   "name": "masscode",
-  "version": "5.4.0",
+  "version": "5.5.0",
   "description": "A free and open source code snippets manager for developers",
   "author": {
     "name": "Anton Reshetov",
@@ -40,6 +40,15 @@
     "docs:generate-assets": "node docs/website/scripts/generate-assets.mjs",
     "docs:build": "pnpm docs:generate-assets && pnpm --dir docs/website build",
     "docs:preview": "pnpm --dir docs/website preview",
+    "integrations:clipper:build": "pnpm --dir integrations/clipper build",
+    "integrations:clipper:build:chrome": "pnpm --dir integrations/clipper build:chrome",
+    "integrations:clipper:build:firefox": "pnpm --dir integrations/clipper build:firefox",
+    "integrations:clipper:build:safari": "pnpm --dir integrations/clipper build:safari",
+    "integrations:clipper:package": "pnpm --dir integrations/clipper package",
+    "integrations:clipper:package:chrome": "pnpm --dir integrations/clipper package:chrome",
+    "integrations:clipper:package:firefox": "pnpm --dir integrations/clipper package:firefox",
+    "integrations:clipper:package:safari": "pnpm --dir integrations/clipper package:safari",
+    "integrations:clipper:typecheck": "pnpm --dir integrations/clipper typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "release": "bumpp -c 'build: release v' -t",
@@ -62,6 +71,7 @@
     "@elysiajs/node": "^1.4.2",
     "@elysiajs/swagger": "^1.3.1",
     "@faker-js/faker": "^10.1.0",
+    "@internationalized/date": "3.7.0",
     "@lezer/highlight": "^1.2.3",
     "@lezer/markdown": "^1.6.3",
     "@sinclair/typebox": "^0.34.41",
@@ -163,8 +173,12 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@parcel/watcher",
       "better-sqlite3",
-      "electron"
+      "electron",
+      "esbuild",
+      "simple-git-hooks",
+      "vue-demi"
     ]
   },
   "simple-git-hooks": {

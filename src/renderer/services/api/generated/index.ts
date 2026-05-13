@@ -9,6 +9,32 @@
  * ---------------------------------------------------------------
  */
 
+export interface CaptureRequest {
+  target: "code" | "notes" | "http";
+  name?: string;
+  folderId?: number | null;
+  text?: string;
+  markdown?: string;
+  url?: string;
+  pageTitle?: string;
+  suggestedName?: string;
+  sourceTitle?: string;
+  sourceUrl?: string;
+  contextLabel?: string;
+  language?: string;
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  source?: {
+    title?: string;
+    url?: string;
+    capturedAt?: number;
+  };
+}
+
+export interface CaptureResponse {
+  target: "code" | "notes" | "http";
+  id: number;
+}
+
 export interface SnippetContentsAdd {
   label: string;
   value: string | null;
@@ -236,6 +262,7 @@ export interface NotesGraphResponse {
 export interface NotesAdd {
   name: string;
   folderId?: number | null;
+  properties?: object;
 }
 
 export interface NotesContentUpdate {
@@ -252,6 +279,7 @@ export interface NoteItemResponse {
   name: string;
   description: string | null;
   content: string;
+  properties: object;
   tags: {
     id: number;
     name: string;
@@ -266,11 +294,14 @@ export interface NoteItemResponse {
   updatedAt: number;
 }
 
+export type NoteProperties = object;
+
 export type NotesResponse = {
   id: number;
   name: string;
   description: string | null;
   content: string;
+  properties: object;
   tags: {
     id: number;
     name: string;
@@ -311,6 +342,15 @@ export interface NotesQuery {
    * @max 1
    */
   isInbox?: number;
+  propertyDue?: "today" | "upcoming";
+  propertyStatus?: string;
+  propertyStatusNot?: string;
+  propertyType?: string;
+}
+
+export interface NotePropertiesUpdate {
+  properties?: object;
+  unset?: string[];
 }
 
 export interface NotesUpdate {
@@ -685,6 +725,85 @@ export interface HttpImportPreviewResponse {
   }[];
 }
 
+export interface ImportApplyInput {
+  files?: {
+    content: string;
+    encoding?: "text" | "base64";
+    name: string;
+    relativePath?: string;
+  }[];
+  source?:
+    | "github-gists"
+    | "obsidian"
+    | "raycast-snippets"
+    | "snippetslab"
+    | "vscode-snippets";
+  space?: "code" | "notes";
+  url?: string;
+}
+
+export interface ImportApplyResponse {
+  createdRootFolderName: string;
+  createdSnippetNames: string[];
+  folders: number;
+  notes: number;
+  snippets: number;
+  source:
+    | "github-gists"
+    | "obsidian"
+    | "raycast-snippets"
+    | "snippetslab"
+    | "vscode-snippets";
+  tags: number;
+  warnings: {
+    code: string;
+    details?: object;
+    source: string;
+  }[];
+}
+
+export interface ImportPreviewInput {
+  files?: {
+    content: string;
+    encoding?: "text" | "base64";
+    name: string;
+    relativePath?: string;
+  }[];
+  source?:
+    | "github-gists"
+    | "obsidian"
+    | "raycast-snippets"
+    | "snippetslab"
+    | "vscode-snippets";
+  space?: "code" | "notes";
+  url?: string;
+}
+
+export interface ImportPreviewResponse {
+  folders: {
+    path: string;
+    snippets: number;
+  }[];
+  groups: {
+    name: string;
+    snippets: number;
+  }[];
+  notes: number;
+  snippets: number;
+  source:
+    | "github-gists"
+    | "obsidian"
+    | "raycast-snippets"
+    | "snippetslab"
+    | "vscode-snippets";
+  tags: string[];
+  warnings: {
+    code: string;
+    details?: object;
+    source: string;
+  }[];
+}
+
 export type QueryParamsType = Record<string | number, any>;
 export type ResponseFormat = keyof Omit<Body, "body" | "bodyUsed">;
 
@@ -931,13 +1050,36 @@ export class HttpClient<SecurityDataType = unknown> {
 
 /**
  * @title massCode API
- * @version 5.3.0
+ * @version 5.4.0
  *
  * Development documentation
  */
 export class Api<
   SecurityDataType extends unknown,
 > extends HttpClient<SecurityDataType> {
+  captures = {
+    /**
+     * No description
+     *
+     * @tags Captures
+     * @name PostCaptures
+     * @request POST:/captures/
+     */
+    postCaptures: (data: CaptureRequest, params: RequestParams = {}) =>
+      this.request<
+        CaptureResponse,
+        {
+          message: string;
+        }
+      >({
+        path: `/captures/`,
+        method: "POST",
+        body: data,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+  };
   snippets = {
     /**
      * No description
@@ -1418,6 +1560,10 @@ export class Api<
          * @max 1
          */
         isInbox?: number;
+        propertyDue?: "today" | "upcoming";
+        propertyStatus?: string;
+        propertyStatusNot?: string;
+        propertyType?: string;
       },
       params: RequestParams = {},
     ) =>
@@ -1534,6 +1680,26 @@ export class Api<
     ) =>
       this.request<void, any>({
         path: `/notes/${id}/content`,
+        method: "PATCH",
+        body: data,
+        type: ContentType.Json,
+        ...params,
+      }),
+
+    /**
+     * No description
+     *
+     * @tags Notes
+     * @name PatchNotesByIdProperties
+     * @request PATCH:/notes/{id}/properties
+     */
+    patchNotesByIdProperties: (
+      id: string,
+      data: NotePropertiesUpdate,
+      params: RequestParams = {},
+    ) =>
+      this.request<void, any>({
+        path: `/notes/${id}/properties`,
         method: "PATCH",
         body: data,
         type: ContentType.Json,
@@ -2132,6 +2298,54 @@ export class Api<
         }
       >({
         path: `/http-import/apply`,
+        method: "POST",
+        body: data,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+  };
+  imports = {
+    /**
+     * No description
+     *
+     * @tags Imports
+     * @name PostImportsPreview
+     * @request POST:/imports/preview
+     */
+    postImportsPreview: (
+      data: ImportPreviewInput,
+      params: RequestParams = {},
+    ) =>
+      this.request<
+        ImportPreviewResponse,
+        {
+          message: string;
+        }
+      >({
+        path: `/imports/preview`,
+        method: "POST",
+        body: data,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * No description
+     *
+     * @tags Imports
+     * @name PostImportsApply
+     * @request POST:/imports/apply
+     */
+    postImportsApply: (data: ImportApplyInput, params: RequestParams = {}) =>
+      this.request<
+        ImportApplyResponse,
+        {
+          message: string;
+        }
+      >({
+        path: `/imports/apply`,
         method: "POST",
         body: data,
         type: ContentType.Json,

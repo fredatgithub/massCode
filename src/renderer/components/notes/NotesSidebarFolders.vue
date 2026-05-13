@@ -3,6 +3,7 @@ import type { TreeNode as TreeNodeType } from '@/components/ui/tree/types'
 import * as ContextMenu from '@/components/ui/shadcn/context-menu'
 import { Tree as UiTree } from '@/components/ui/tree'
 import {
+  useDeleteShortcut,
   useNoteFolderDragDrop,
   useNoteFolders,
   useNotes,
@@ -62,6 +63,7 @@ const {
 const {
   createNoteFolderAndSelect,
   folders,
+  deleteSelectedNoteFolders,
   updateNoteFolder,
   getFolderByIdFromTree,
   selectedFolderIds,
@@ -244,6 +246,12 @@ function onUpdateLabel({ node, value }: { node: TreeNodeType, value: string }) {
 function onCancelEdit() {
   editableId.value = null
 }
+
+useDeleteShortcut({
+  rootSelector: '[data-notes-folders-tree]',
+  isEnabled: () => focusedFolderId.value !== undefined,
+  onDelete: () => deleteSelectedNoteFolders(focusedFolderId.value),
+})
 </script>
 
 <template>
@@ -258,8 +266,11 @@ function onCancelEdit() {
     </template>
   </SidebarSectionHeader>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div class="min-h-0 flex-1">
-      <div class="min-h-0 flex-1 overflow-y-auto">
+    <div class="min-h-0 flex-1 overflow-hidden">
+      <div
+        data-notes-folders-tree
+        class="h-full min-h-0"
+      >
         <ContextMenu.ContextMenu>
           <ContextMenu.ContextMenuTrigger as-child>
             <UiTree

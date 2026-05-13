@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import * as ContextMenu from '@/components/ui/shadcn/context-menu'
 import {
+  isTaskNote,
+  NoteTaskStatus,
   useDialog,
   useDonations,
   useNotes,
   useNotesApp,
-  useNoteSearch,
 } from '@/composables'
 import { LibraryFilter } from '@/composables/types'
 import { i18n, ipc } from '@/electron'
@@ -27,6 +28,7 @@ interface NoteRecord {
   name: string
   description: string | null
   content: string
+  properties: Record<string, unknown>
   tags: NoteTagInfo[]
   folder: NoteFolderInfo | null
   isFavorites: number
@@ -47,14 +49,13 @@ const {
   selectFirstNote,
   selectedNoteIds,
   updateNote,
+  updateNoteProperties,
   updateNotes,
-  deleteNote,
-  deleteNotes,
+  deleteSelectedNotes,
 } = useNotes()
-const { displayedNotes } = useNoteSearch()
 
-const { confirm } = useDialog()
 const { copy } = useClipboard()
+const { confirm } = useDialog()
 
 const isFavoritesLibrarySelected = computed(
   () => notesState.libraryFilter === LibraryFilter.Favorites,
@@ -63,6 +64,7 @@ const isFavoritesLibrarySelected = computed(
 const isTrashLibrarySelected = computed(
   () => notesState.libraryFilter === LibraryFilter.Trash,
 )
+const isTask = computed(() => isTaskNote(props.note))
 
 const revealInFileManagerLabel = computed(() =>
   isMac
@@ -92,48 +94,7 @@ async function onAddFavorites() {
 }
 
 async function onDelete() {
-  if (selectedNoteIds.value.length > 1) {
-    const isAllSoftDeleted = displayedNotes.value?.every(n => n.isDeleted)
-
-    if (isAllSoftDeleted) {
-      const isConfirmed = await confirm({
-        title: i18n.t('messages:confirm.deleteConfirmMultipleSnippets', {
-          count: selectedNoteIds.value.length,
-        }),
-        content: i18n.t('messages:warning.noUndo'),
-      })
-
-      if (isConfirmed) {
-        await deleteNotes(selectedNoteIds.value)
-      }
-    }
-    else {
-      const notesData = selectedNoteIds.value.map(() => ({
-        folderId: null,
-        isDeleted: 1,
-      }))
-      await updateNotes(selectedNoteIds.value, notesData)
-    }
-  }
-  else if (props.note.isDeleted) {
-    const isConfirmed = await confirm({
-      title: i18n.t('messages:confirm.deletePermanently', {
-        name: props.note.name,
-      }),
-      content: i18n.t('messages:warning.noUndo'),
-    })
-
-    if (isConfirmed) {
-      await deleteNote(props.note.id)
-    }
-  }
-  else {
-    await updateNote(props.note.id, { folderId: null, isDeleted: 1 })
-  }
-
-  if (selectedNoteIds.value.length > 1 || notesState.noteId === props.note.id) {
-    selectFirstNote()
-  }
+  await deleteSelectedNotes(props.note)
 }
 
 async function onRestore() {
@@ -161,6 +122,32 @@ function onCopyNoteContent() {
   copy(props.note.content)
   useDonations().incrementCopy('notes')
 }
+
+async function onConvertToTask() {
+  await updateNoteProperties(props.note.id, {
+    properties: {
+      status: NoteTaskStatus.Todo,
+      type: 'task',
+    },
+  })
+}
+
+async function onConvertToNote() {
+  const isConfirmed = await confirm({
+    title: i18n.t('messages:confirm.convertTaskToNote', {
+      name: props.note.name,
+    }),
+    content: i18n.t('messages:warning.taskPropertiesRemoved'),
+  })
+
+  if (!isConfirmed) {
+    return
+  }
+
+  await updateNoteProperties(props.note.id, {
+    unset: ['type', 'status', 'priority', 'due'],
+  })
+}
 </script>
 
 <template>
@@ -172,6 +159,18 @@ function onCopyNoteContent() {
             ? i18n.t("action.remove.fromFavorites")
             : i18n.t("action.add.toFavorites")
         }}
+      </ContextMenu.ContextMenuItem>
+      <ContextMenu.ContextMenuItem
+        v-if="!isTask"
+        @click="onConvertToTask"
+      >
+        {{ i18n.t("notes.tasks.convertToTask") }}
+      </ContextMenu.ContextMenuItem>
+      <ContextMenu.ContextMenuItem
+        v-else
+        @click="onConvertToNote"
+      >
+        {{ i18n.t("notes.tasks.convertToNote") }}
       </ContextMenu.ContextMenuItem>
       <ContextMenu.ContextMenuSeparator />
     </template>

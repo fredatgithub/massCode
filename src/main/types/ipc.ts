@@ -15,6 +15,7 @@ type MainMenuAction =
   | 'goto-devtools'
   | 'new-note'
   | 'new-note-folder'
+  | 'new-task'
   | 'new-folder'
   | 'new-fragment'
   | 'new-sheet'
@@ -37,6 +38,8 @@ type MainMenuAction =
 type DBAction = 'migrate-to-markdown'
 
 type SystemAction =
+  | 'api-token-generate'
+  | 'api-token-revoke'
   | 'currency-rates'
   | 'currency-rates-refresh'
   | 'crypto-rates-refresh'
@@ -56,7 +59,7 @@ type SystemAction =
   | 'migration-error'
   | 'error'
 type PrettierAction = 'format'
-type FsAction = 'assets' | 'notes-asset'
+type FsAction = 'assets' | 'import-markdown-folder' | 'notes-asset'
 type ThemeAction = 'list' | 'get' | 'open-dir' | 'create-template' | 'changed'
 type SpacesAction = 'math:read' | 'math:write' | 'http:execute'
 
@@ -89,4 +92,22 @@ export interface PrettierOptions {
 
 export interface FsAssetsOptions {
   path: string
+}
+
+export interface ImportMarkdownFolderFile {
+  content: string
+  name: string
+  relativePath: string
+}
+
+export interface ImportMarkdownFolderWarning {
+  code: string
+  details?: Record<string, string>
+  source: string
+}
+
+export interface ImportMarkdownFolderResponse {
+  canceled: boolean
+  files: ImportMarkdownFolderFile[]
+  warnings: ImportMarkdownFolderWarning[]
 }

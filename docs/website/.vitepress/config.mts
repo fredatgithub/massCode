@@ -82,6 +82,7 @@ export default defineConfig({
 
     nav: [
       { text: 'Documentation', link: '/documentation/' },
+      { text: 'Compare', link: '/compare/' },
       { text: 'Sponsor', link: '/sponsor/' },
       { text: 'Donate', link: '/donate/' },
       {
@@ -94,6 +95,26 @@ export default defineConfig({
     ],
 
     sidebar: {
+      '/compare/': [
+        {
+          text: 'Compare',
+          items: [
+            { text: 'Overview', link: '/compare/' },
+            { text: 'massCode vs Pieces', link: '/compare/pieces' },
+            { text: 'massCode vs Cacher', link: '/compare/cacher' },
+            { text: 'massCode vs SnippetsLab', link: '/compare/snippetslab' },
+            { text: 'massCode vs Raycast Snippets', link: '/compare/raycast' },
+            { text: 'massCode vs Todoist', link: '/compare/todoist' },
+            { text: 'massCode vs TickTick', link: '/compare/ticktick' },
+            { text: 'massCode vs Things 3', link: '/compare/things' },
+            { text: 'massCode vs Apple Reminders', link: '/compare/apple-reminders' },
+            { text: 'massCode vs Obsidian Tasks', link: '/compare/obsidian-tasks' },
+            { text: 'Best Open-Source Snippet Manager', link: '/compare/best-open-source' },
+            { text: 'Local-First Alternative to Pieces / Cacher', link: '/compare/local-first' },
+            { text: 'Markdown-First Task Manager', link: '/compare/markdown-first-tasks' },
+          ],
+        },
+      ],
       '/documentation/': [
         {
           text: 'General',
@@ -102,27 +123,31 @@ export default defineConfig({
             { text: 'Command Palette', link: '/documentation/command-palette' },
             { text: 'Storage', link: '/documentation/storage' },
             { text: 'Sync', link: '/documentation/sync' },
+            { text: 'Imports', link: '/documentation/imports' },
+            { text: 'Clipper', link: '/documentation/clipper' },
             { text: 'Themes', link: '/documentation/themes' },
           ],
         },
         {
           text: 'Code',
           items: [
-            { text: 'Library', link: '/documentation/code/library' },
-            { text: 'Folders', link: '/documentation/code/folders' },
-            { text: 'Tags', link: '/documentation/code/tags' },
+            { text: 'Overview', link: '/documentation/code/' },
             { text: 'Snippets', link: '/documentation/code/snippets' },
             { text: 'Fragments', link: '/documentation/code/fragments' },
             { text: 'Description', link: '/documentation/code/description' },
+            { text: 'Library', link: '/documentation/code/library' },
+            { text: 'Folders', link: '/documentation/code/folders' },
+            { text: 'Tags', link: '/documentation/code/tags' },
             { text: 'Search', link: '/documentation/code/search' },
           ],
         },
         {
           text: 'Notes',
           items: [
-            { text: 'Notes', link: '/documentation/notes/' },
+            { text: 'Overview', link: '/documentation/notes/' },
             { text: 'Dashboard', link: '/documentation/notes/dashboard' },
             { text: 'Library', link: '/documentation/notes/library' },
+            { text: 'Tasks', link: '/documentation/notes/tasks' },
             { text: 'Folders', link: '/documentation/notes/folders' },
             { text: 'Tags', link: '/documentation/notes/tags' },
             { text: 'Internal Links', link: '/documentation/notes/internal-links' },
@@ -137,7 +162,7 @@ export default defineConfig({
         {
           text: 'HTTP',
           items: [
-            { text: 'HTTP Client', link: '/documentation/http/' },
+            { text: 'Overview', link: '/documentation/http/' },
             { text: 'Requests', link: '/documentation/http/requests' },
             { text: 'Environments', link: '/documentation/http/environments' },
             { text: 'Importing Collections', link: '/documentation/http/importing' },
@@ -146,7 +171,7 @@ export default defineConfig({
         {
           text: 'Math',
           items: [
-            { text: 'Math Notebook', link: '/documentation/math/' },
+            { text: 'Overview', link: '/documentation/math/' },
           ],
         },
         {

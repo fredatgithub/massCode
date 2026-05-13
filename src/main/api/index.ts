@@ -4,12 +4,14 @@ import { app as electronApp } from 'electron'
 import { Elysia } from 'elysia'
 import { store } from '../store'
 import { importEsm } from '../utils'
+import captures from './routes/captures'
 import folders from './routes/folders'
 import httpEnvironments from './routes/http-environments'
 import httpFolders from './routes/http-folders'
 import httpHistory from './routes/http-history'
 import httpImport from './routes/http-import'
 import httpRequests from './routes/http-requests'
+import imports from './routes/imports'
 import noteFolders from './routes/note-folders'
 import noteTags from './routes/note-tags'
 import notes from './routes/notes'
@@ -39,6 +41,7 @@ export async function initApi() {
         },
       }),
     )
+    .use(captures)
     .use(snippets)
     .use(folders)
     .use(system)
@@ -53,6 +56,7 @@ export async function initApi() {
     .use(httpEnvironments)
     .use(httpHistory)
     .use(httpImport)
+    .use(imports)
     .listen(port)
 
   // eslint-disable-next-line no-console
