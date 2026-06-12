@@ -2,6 +2,7 @@ import {
   normalizeCodeSelectionState,
   normalizeNotesSelectionState,
   useApp,
+  useDrawings,
   useFolders,
   useHttpApp,
   useHttpSpaceInit,
@@ -32,6 +33,11 @@ const { selectFirstSnippet, displayedSnippets } = useSnippets()
 const { hasBusyContentUpdates } = useSnippetUpdate()
 const { shouldSkipStorageSyncRefresh } = useStorageMutation()
 const { reloadFromDisk: reloadMathFromDisk } = useMathNotebook()
+const {
+  reloadFromDisk: reloadDrawingsFromDisk,
+  hasBusyDrawingUpdates,
+  markDrawingsStale,
+} = useDrawings()
 const { refreshHttpSpaceFromDisk } = useHttpSpaceInit()
 const { isNotesSpaceInitialized } = useNotesApp()
 const { getNoteFolders } = useNoteFolders()
@@ -67,10 +73,14 @@ async function refreshAfterStorageSync() {
   isCodeSpaceInitialized.value = false
   isNotesSpaceInitialized.value = false
   isHttpSpaceInitialized.value = false
+  markDrawingsStale()
 
   switch (activeSpace) {
     case 'math':
       await reloadMathFromDisk()
+      break
+    case 'drawings':
+      await reloadDrawingsFromDisk()
       break
     case 'notes':
       await getNoteFolders()
@@ -108,6 +118,7 @@ function scheduleStorageSyncRefresh() {
       shouldSkipStorageSyncRefresh()
       || hasBusyContentUpdates()
       || hasBusyNoteContentUpdates()
+      || hasBusyDrawingUpdates()
     ) {
       scheduleStorageSyncRefresh()
       return
@@ -131,12 +142,27 @@ export function registerSystemListeners() {
 
   ipc.on('system:update-available', () => {
     sonner({
-      message: 'Update available',
+      message: i18n.t('messages:update.availableToast'),
       type: 'success',
       action: {
-        label: 'Go to GitHub',
+        label: i18n.t('messages:update.goToGitHub'),
         onClick: () => {
           ipc.invoke('system:open-external', `${repository}/releases`)
+        },
+      },
+    })
+  })
+
+  ipc.on('system:update-downloaded', (_, payload: { version: string }) => {
+    sonner({
+      message: i18n.t('messages:update.downloaded', {
+        version: payload.version,
+      }),
+      type: 'success',
+      action: {
+        label: i18n.t('messages:update.restart'),
+        onClick: () => {
+          ipc.invoke('system:install-update', null)
         },
       },
     })

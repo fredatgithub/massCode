@@ -3,6 +3,7 @@ import {
   initCodeSpace,
   queueNavigationUIStateRestore,
   useApp,
+  useDrawings,
   useFolders,
   useHttpApp,
   useHttpFolders,
@@ -14,8 +15,10 @@ import {
   useNotesApp,
   useNotesSpaceInitialization,
   useSnippets,
+  useSonner,
 } from '@/composables'
 import { LibraryFilter } from '@/composables/types'
+import { i18n, ipc } from '@/electron'
 import { router, RouterName } from '@/router'
 import { api } from '@/services/api'
 
@@ -244,6 +247,22 @@ export async function openHttpRequestDeepLink(
   }
 }
 
+export async function openDrawingDeepLink(drawingId: string): Promise<void> {
+  const { openDrawing } = useDrawings()
+  await openDrawing(drawingId)
+}
+
+export async function openDrawingTarget(drawingId: string): Promise<void> {
+  if (isNavigatingHistory.value) {
+    await openDrawingDeepLink(drawingId)
+    return
+  }
+
+  await recordNavigation(async () => {
+    await openDrawingDeepLink(drawingId)
+  })
+}
+
 export async function openInternalTarget(
   target: InternalTarget,
 ): Promise<void> {
@@ -300,6 +319,11 @@ async function restoreNavigationTarget(
       return
     }
 
+    if (target.type === 'drawing') {
+      await openDrawingDeepLink(target.id)
+      return
+    }
+
     await openNoteDeepLink(target.id)
   }
   finally {
@@ -327,8 +351,56 @@ export async function navigateForward(): Promise<void> {
   await restoreNavigationTarget(target)
 }
 
+async function activateLicenseFromDeepLink(key: string): Promise<void> {
+  const { sonner } = useSonner()
+  const { isSponsored } = useApp()
+
+  const result = (await ipc.invoke('system:activate-license', { key })) as {
+    active: boolean
+    name: string | null
+  }
+
+  if (!result.active) {
+    sonner({
+      message: i18n.t('messages:error.licenseInvalid'),
+      type: 'error',
+    })
+    return
+  }
+
+  isSponsored.value = true
+
+  sonner({
+    message: i18n.t('messages:success.licenseActivated'),
+    type: 'success',
+  })
+}
+
 export async function handleDeepLink(url: string): Promise<void> {
   const parsed = new URL(url)
+
+  if (parsed.hostname === 'activate') {
+    const key = parsed.searchParams.get('key')
+
+    if (key) {
+      await activateLicenseFromDeepLink(key)
+    }
+
+    return
+  }
+
+  if (parsed.hostname === 'drawing') {
+    const drawingId = decodeURIComponent(
+      parsed.pathname.replace(/^\/+/, ''),
+    ).trim()
+
+    if (drawingId) {
+      await openDrawingTarget(drawingId)
+    }
+
+    return
+  }
+
   const snippetId = parsed.searchParams.get('snippetId')
   const noteId = parsed.searchParams.get('noteId')
   const httpRequestId = parsed.searchParams.get('httpRequestId')

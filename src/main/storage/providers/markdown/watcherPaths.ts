@@ -1,6 +1,7 @@
 import path from 'node:path'
 import {
   CODE_SPACE_ID,
+  DRAWINGS_SPACE_ID,
   HTTP_SPACE_ID,
   INBOX_DIR_NAME,
   MATH_SPACE_ID,
@@ -104,6 +105,10 @@ export function isHttpWatchPath(relativePath: string | null): boolean {
   return getWatchPathSpaceId(relativePath) === HTTP_SPACE_ID
 }
 
+export function isDrawingsWatchPath(relativePath: string | null): boolean {
+  return getWatchPathSpaceId(relativePath) === DRAWINGS_SPACE_ID
+}
+
 export function toCodeRelativePath(relativePath: string): string | null {
   const normalizedRelativePath = relativePath.toLowerCase()
 
@@ -117,4 +122,19 @@ export function toCodeRelativePath(relativePath: string): string | null {
   }
 
   return relativePath.slice(codePrefix.length)
+}
+
+export function toNotesRelativePath(relativePath: string): string | null {
+  const normalizedRelativePath = relativePath.toLowerCase()
+
+  if (normalizedRelativePath === NOTES_SPACE_WATCH_PREFIX) {
+    return null
+  }
+
+  const notesPrefix = `${NOTES_SPACE_WATCH_PREFIX}/`
+  if (!normalizedRelativePath.startsWith(notesPrefix)) {
+    return null
+  }
+
+  return relativePath.slice(notesPrefix.length)
 }

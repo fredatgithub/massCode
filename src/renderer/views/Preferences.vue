@@ -10,9 +10,11 @@ import {
   Code2,
   Globe,
   HardDrive,
+  Heart,
   Notebook,
   Palette,
   Plug,
+  RefreshCw,
   Send,
 } from 'lucide-vue-next'
 import { RouterLink, useRoute } from 'vue-router'
@@ -65,6 +67,16 @@ const nav: { label: string, name: string, icon: Component }[] = [
     label: i18n.t('preferences:api.label'),
     name: RouterName.preferencesAPI,
     icon: Plug,
+  },
+  {
+    label: i18n.t('preferences:updates.label'),
+    name: RouterName.preferencesUpdates,
+    icon: RefreshCw,
+  },
+  {
+    label: i18n.t('preferences:supporter.label'),
+    name: RouterName.preferencesSupporter,
+    icon: Heart,
   },
 ]
 

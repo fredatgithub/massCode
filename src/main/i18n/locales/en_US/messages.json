@@ -20,7 +20,8 @@
     "copied": "Copied to clipboard",
     "migrateToMarkdown": "Migrated to Markdown Vault. Folders: {{folders}}, snippets: {{snippets}}, tags: {{tags}}.",
     "vaultMoved": "Vault successfully moved.",
-    "vaultLoaded": "Vault successfully loaded."
+    "vaultLoaded": "Vault successfully loaded.",
+    "licenseActivated": "License activated. Thank you for supporting massCode!"
   },
   "warning": {
     "noUndo": "You cannot undo this action.",
@@ -44,7 +45,8 @@
     "entryNameNoteConflict": "A note with this name already exists in this folder.",
     "entryNameSnippetConflict": "A snippet with this name already exists in this folder.",
     "entryNameRequestConflict": "A request with this name already exists in this folder.",
-    "entryNameFolderConflict": "A folder with this name already exists at this level."
+    "entryNameFolderConflict": "A folder with this name already exists at this level.",
+    "licenseInvalid": "Invalid license key"
   },
   "description": {
     "storageVault": "Choose the vault directory. To sync between devices, select a folder in iCloud Drive, Google Drive or Dropbox.",
@@ -61,13 +63,15 @@
         "http": "{{count}} HTTP items copied 🚀",
         "notes": "{{count}} notes copied 🚀",
         "math": "{{count}} math results copied 🚀",
-        "tools": "{{count}} tool outputs copied 🚀"
+        "tools": "{{count}} tool outputs copied 🚀",
+        "drawings": "{{count}} drawing items copied 🚀"
       },
       "created": {
         "code": "{{count}} snippets created 🎉",
         "http": "{{count}} HTTP requests created 🎉",
         "notes": "{{count}} notes created 🎉",
-        "math": "{{count}} sheets created 🎉"
+        "math": "{{count}} sheets created 🎉",
+        "drawings": "{{count}} drawings created 🎉"
       },
       "sent": {
         "http": "{{count}} HTTP requests sent 🚀"
@@ -94,6 +98,13 @@
   "release": {},
   "update": {
     "available": "Version {{newVersion}} is now available for download.\nYour version is {{oldVersion}}.",
-    "noAvailable": "There are currently no updates available."
+    "noAvailable": "There are currently no updates available.",
+    "downloading": "Update v{{version}} is downloading in the background. You will be prompted to restart when it is ready.",
+    "availableToast": "Update available",
+    "goToGitHub": "Go to GitHub",
+    "downloaded": "Update v{{version}} is ready. Restart massCode to apply it.",
+    "restart": "Restart",
+    "whatsNewToast": "See what's new in massCode v{{version}}",
+    "releaseNotes": "Release notes"
   }
 }

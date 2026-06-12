@@ -38,6 +38,7 @@ type MainMenuAction =
 type DBAction = 'migrate-to-markdown'
 
 type SystemAction =
+  | 'activate-license'
   | 'api-token-generate'
   | 'api-token-revoke'
   | 'currency-rates'
@@ -52,7 +53,9 @@ type SystemAction =
   | 'show-note-in-file-manager'
   | 'show-snippet-in-file-manager'
   | 'deep-link'
+  | 'install-update'
   | 'update-available'
+  | 'update-downloaded'
   | 'renderer-ready'
   | 'storage-synced'
   | 'migration-complete'
@@ -61,7 +64,17 @@ type SystemAction =
 type PrettierAction = 'format'
 type FsAction = 'assets' | 'import-markdown-folder' | 'notes-asset'
 type ThemeAction = 'list' | 'get' | 'open-dir' | 'create-template' | 'changed'
-type SpacesAction = 'math:read' | 'math:write' | 'http:execute'
+type SpacesAction =
+  | 'math:read'
+  | 'math:write'
+  | 'http:execute'
+  | 'drawings:list'
+  | 'drawings:read'
+  | 'drawings:write'
+  | 'drawings:create'
+  | 'drawings:rename'
+  | 'drawings:duplicate'
+  | 'drawings:delete'
 
 export type MainMenuChannel = CombineWith<MainMenuAction, 'main-menu'>
 export type DBChannel = CombineWith<DBAction, 'db'>

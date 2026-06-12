@@ -1,6 +1,9 @@
 import type { ChokidarOptions, FSWatcher } from 'chokidar'
+import type { NotesPaths, NotesRuntimeCache } from './notes/runtime'
+import path from 'node:path'
 import { BrowserWindow } from 'electron'
 import { importEsm, log } from '../../../utils'
+import { wasRecentAppDrawingChange } from './drawings'
 import {
   getHttpPaths,
   peekHttpRuntimeCache,
@@ -10,38 +13,51 @@ import {
 import {
   getNotesPaths,
   peekNotesRuntimeCache,
+  resetNotesPathsCache,
   resetNotesRuntimeCache,
+  syncNoteFileWithDisk,
   syncNotesRuntimeWithDisk,
 } from './notes/runtime'
 import {
   ensureStateFile,
   getPaths,
   getVaultPath,
+  type MarkdownRuntimeCache,
   type Paths,
   peekRuntimeCache,
+  resetPathsCache,
   resetRuntimeCache,
   syncRuntimeWithDisk,
   syncSnippetFileWithDisk,
 } from './runtime'
+import { wasRecentAppFileChange } from './runtime/shared/appChanges'
 import {
   getWatchPathSpaceId,
   isCodeWatchPath,
+  isDrawingsWatchPath,
   isHttpWatchPath,
   isMathWatchPath,
   isNotesWatchPath,
   normalizeRelativeWatchPath,
   shouldIgnoreWatchPath,
   toCodeRelativePath,
+  toNotesRelativePath,
 } from './watcherPaths'
+
+// Above this number of buffered file changes an incremental per-file sync
+// is unlikely to beat one full re-read, so the watcher escalates instead.
+const MAX_PENDING_SYNC_FILE_PATHS = 25
 
 let markdownWatcher: FSWatcher | null = null
 let markdownWatchTimer: NodeJS.Timeout | null = null
 let watchedVaultPath: string | null = null
-let pendingFilePath: string | null = null
+const pendingCodeFilePaths = new Set<string>()
+const pendingNoteFilePaths = new Set<string>()
 let hasPendingFullSync = false
 let hasPendingMathSync = false
 let hasPendingNotesSync = false
 let hasPendingHttpSync = false
+let hasPendingDrawingsSync = false
 let watcherStartToken = 0
 let chokidarWatchLoader: Promise<ChokidarWatch> | null = null
 
@@ -79,6 +95,38 @@ async function getChokidarWatch(): Promise<ChokidarWatch> {
   return chokidarWatchLoader
 }
 
+function syncChangedSnippetFiles(
+  paths: Paths,
+  changedFilePaths: string[],
+): MarkdownRuntimeCache {
+  let nextCache: MarkdownRuntimeCache | null = null
+
+  for (const changedFilePath of changedFilePaths) {
+    nextCache = syncSnippetFileWithDisk(paths, changedFilePath)
+    if (!nextCache) {
+      return syncRuntimeWithDisk(paths)
+    }
+  }
+
+  return nextCache ?? syncRuntimeWithDisk(paths)
+}
+
+function syncChangedNoteFiles(
+  notesPaths: NotesPaths,
+  changedFilePaths: string[],
+): NotesRuntimeCache {
+  let nextCache: NotesRuntimeCache | null = null
+
+  for (const changedFilePath of changedFilePaths) {
+    nextCache = syncNoteFileWithDisk(notesPaths, changedFilePath)
+    if (!nextCache) {
+      return syncNotesRuntimeWithDisk(notesPaths)
+    }
+  }
+
+  return nextCache ?? syncNotesRuntimeWithDisk(notesPaths)
+}
+
 function scheduleStateSync(
   vaultRootPath: string,
   paths: Paths,
@@ -94,11 +142,31 @@ function scheduleStateSync(
   const changedCodePath = isCodeWatchPath(changedPath)
   const changedMathPath = isMathWatchPath(changedPath)
   const changedHttpPath = isHttpWatchPath(changedPath)
+  const changedDrawingsPath = isDrawingsWatchPath(changedPath)
   const changedCodeRelativePath
     = changedPath && changedCodePath ? toCodeRelativePath(changedPath) : null
 
-  if (changedNotesPath) {
-    hasPendingNotesSync = true
+  // Echoes of the app's own file writes are skipped entirely: the runtime
+  // caches were already updated by the storage layer before the write.
+  const isAppEcho
+    = changedPath !== null
+      && !forceFullSync
+      && (changedNotesPath || changedCodePath)
+      && wasRecentAppFileChange(path.join(vaultRootPath, changedPath))
+
+  if (changedNotesPath && !isAppEcho) {
+    const changedNoteRelativePath
+      = changedPath && !forceFullSync ? toNotesRelativePath(changedPath) : null
+
+    if (changedNoteRelativePath) {
+      pendingNoteFilePaths.add(changedNoteRelativePath)
+      if (pendingNoteFilePaths.size > MAX_PENDING_SYNC_FILE_PATHS) {
+        hasPendingNotesSync = true
+      }
+    }
+    else {
+      hasPendingNotesSync = true
+    }
   }
 
   if (changedMathPath) {
@@ -107,6 +175,15 @@ function scheduleStateSync(
 
   if (changedHttpPath) {
     hasPendingHttpSync = true
+  }
+
+  if (
+    changedDrawingsPath
+    && !(changedPath && wasRecentAppDrawingChange(vaultRootPath, changedPath))
+  ) {
+    // Echoes of the app's own drawing writes are skipped entirely:
+    // re-syncing them would only re-read data the renderer already has.
+    hasPendingDrawingsSync = true
   }
 
   if (changedNotesPath) {
@@ -118,20 +195,24 @@ function scheduleStateSync(
   else if (changedHttpPath) {
     // HTTP space has separate runtime cache sync path.
   }
+  else if (changedDrawingsPath) {
+    // Drawings space has no main-process cache to sync; broadcast only.
+  }
   else if (forceFullSync || !changedPath) {
     hasPendingFullSync = true
 
     if (forceFullSync && !changedPath) {
       hasPendingNotesSync = true
       hasPendingHttpSync = true
+      hasPendingDrawingsSync = true
     }
   }
   else if (changedCodeRelativePath) {
-    if (pendingFilePath && pendingFilePath !== changedCodeRelativePath) {
-      hasPendingFullSync = true
-    }
-    else {
-      pendingFilePath = changedCodeRelativePath
+    if (!isAppEcho) {
+      pendingCodeFilePaths.add(changedCodeRelativePath)
+      if (pendingCodeFilePaths.size > MAX_PENDING_SYNC_FILE_PATHS) {
+        hasPendingFullSync = true
+      }
     }
   }
   else if (!changedNotesPath) {
@@ -149,34 +230,47 @@ function scheduleStateSync(
       const previousCache = peekRuntimeCache()
       const previousNotesCache = peekNotesRuntimeCache()
       const previousHttpCache = peekHttpRuntimeCache()
-      const changedFilePath = hasPendingFullSync ? null : pendingFilePath
+      const changedCodeFilePaths = hasPendingFullSync
+        ? null
+        : [...pendingCodeFilePaths]
+      const changedNoteFilePaths = hasPendingNotesSync
+        ? null
+        : [...pendingNoteFilePaths]
       const shouldNotifyMath = hasPendingMathSync
-      const shouldSyncCode = hasPendingFullSync || changedFilePath !== null
-      const shouldSyncNotes = hasPendingNotesSync
+      const shouldNotifyDrawings = hasPendingDrawingsSync
+      const shouldSyncCode
+        = hasPendingFullSync
+          || (changedCodeFilePaths !== null && changedCodeFilePaths.length > 0)
+      const shouldSyncNotes
+        = hasPendingNotesSync
+          || (changedNoteFilePaths !== null && changedNoteFilePaths.length > 0)
       const shouldSyncHttp = hasPendingHttpSync
 
       hasPendingFullSync = false
       hasPendingMathSync = false
       hasPendingNotesSync = false
       hasPendingHttpSync = false
-      pendingFilePath = null
+      hasPendingDrawingsSync = false
+      pendingCodeFilePaths.clear()
+      pendingNoteFilePaths.clear()
 
       let nextCache = previousCache
       if (shouldSyncCode) {
-        if (changedFilePath) {
-          const syncedSnippetCache = syncSnippetFileWithDisk(
-            paths,
-            changedFilePath,
-          )
-          nextCache = syncedSnippetCache || syncRuntimeWithDisk(paths)
-        }
-        else {
-          nextCache = syncRuntimeWithDisk(paths)
-        }
+        nextCache
+          = changedCodeFilePaths && changedCodeFilePaths.length > 0
+            ? syncChangedSnippetFiles(paths, changedCodeFilePaths)
+            : syncRuntimeWithDisk(paths)
       }
-      const nextNotesCache = shouldSyncNotes
-        ? syncNotesRuntimeWithDisk(getNotesPaths(vaultRootPath))
-        : previousNotesCache
+
+      let nextNotesCache = previousNotesCache
+      if (shouldSyncNotes) {
+        const notesPaths = getNotesPaths(vaultRootPath)
+        nextNotesCache
+          = changedNoteFilePaths && changedNoteFilePaths.length > 0
+            ? syncChangedNoteFiles(notesPaths, changedNoteFilePaths)
+            : syncNotesRuntimeWithDisk(notesPaths)
+      }
+
       const nextHttpCache = shouldSyncHttp
         ? syncHttpRuntimeWithDisk(getHttpPaths(vaultRootPath))
         : previousHttpCache
@@ -187,6 +281,7 @@ function scheduleStateSync(
         = shouldSyncNotes
           && (!previousNotesCache || nextNotesCache !== previousNotesCache)
       const hasMathChanges = shouldNotifyMath
+      const hasDrawingsChanges = shouldNotifyDrawings
       const hasHttpChanges
         = shouldSyncHttp
           && (!previousHttpCache || nextHttpCache !== previousHttpCache)
@@ -196,6 +291,7 @@ function scheduleStateSync(
         || hasNotesChanges
         || hasMathChanges
         || hasHttpChanges
+        || hasDrawingsChanges
       ) {
         BrowserWindow.getAllWindows().forEach((window) => {
           window.webContents.send('system:storage-synced')
@@ -222,14 +318,18 @@ export function stopMarkdownWatcher(): void {
   }
 
   watchedVaultPath = null
-  pendingFilePath = null
+  pendingCodeFilePaths.clear()
+  pendingNoteFilePaths.clear()
   hasPendingFullSync = false
   hasPendingMathSync = false
   hasPendingNotesSync = false
   hasPendingHttpSync = false
+  hasPendingDrawingsSync = false
   resetRuntimeCache()
   resetNotesRuntimeCache()
   resetHttpRuntimeCache()
+  resetPathsCache()
+  resetNotesPathsCache()
 }
 
 export function startMarkdownWatcher(): void {

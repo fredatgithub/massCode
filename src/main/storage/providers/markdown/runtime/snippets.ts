@@ -21,7 +21,7 @@ import {
 } from './constants'
 import { normalizeNullableNumber, normalizeNumber } from './normalizers'
 import {
-  parseBodyFragments,
+  parseBodyFragmentsWithMetadata,
   serializeSnippet,
   splitFrontmatter,
 } from './parser'
@@ -31,6 +31,12 @@ import {
   getFolderPathById,
   normalizeDirectoryPath,
 } from './paths'
+import { rememberAppFileChange } from './shared/appChanges'
+import {
+  getCachedDirectoryEntries,
+  removeDirectoryEntryFromCache,
+  upsertDirectoryEntryInCache,
+} from './shared/directoryEntries'
 import { listMarkdownFiles as listMarkdownFilesShared } from './shared/path'
 import {
   getFileTimestampFallbacks,
@@ -83,6 +89,20 @@ export function readSnippetFromFile(
   entry: MarkdownSnippetIndexItem,
   pathToFolderIdMap: ReadonlyMap<string, number>,
 ): MarkdownSnippet | null {
+  return (
+    readSnippetFromFileWithMetadata(paths, entry, pathToFolderIdMap)?.snippet
+    ?? null
+  )
+}
+
+export function readSnippetFromFileWithMetadata(
+  paths: Paths,
+  entry: MarkdownSnippetIndexItem,
+  pathToFolderIdMap: ReadonlyMap<string, number>,
+): {
+  legacyRecovery: 'ambiguous' | 'none' | 'recovered'
+  snippet: MarkdownSnippet
+} | null {
   const snippetPath = path.join(paths.vaultPath, entry.filePath)
 
   if (!fs.pathExistsSync(snippetPath)) {
@@ -93,10 +113,13 @@ export function readSnippetFromFile(
   const { body, frontmatter, hasFrontmatter } = splitFrontmatter(source)
   const now = Date.now()
   const timestampFallbacks = getFileTimestampFallbacks(snippetPath, now)
-  const fragments = parseBodyFragments(body)
   const metaContents = Array.isArray(frontmatter.contents)
     ? frontmatter.contents
     : []
+  const { fragments, legacyRecovery } = parseBodyFragmentsWithMetadata(
+    body,
+    metaContents,
+  )
 
   const contents = fragments.length
     ? fragments.map((fragment, index) => {
@@ -172,17 +195,33 @@ export function readSnippetFromFile(
     writeSnippetToFile(paths, snippet)
   }
 
-  return snippet
+  return { legacyRecovery, snippet }
 }
 
 export function loadSnippets(
   paths: Paths,
   state: MarkdownState,
+  options?: { rewriteRecoveredLegacyFences?: boolean },
 ): MarkdownSnippet[] {
   const pathToFolderIdMap = buildPathToFolderIdMap(state)
 
   return state.snippets
-    .map(item => readSnippetFromFile(paths, item, pathToFolderIdMap))
+    .map((item) => {
+      const result = readSnippetFromFileWithMetadata(
+        paths,
+        item,
+        pathToFolderIdMap,
+      )
+
+      if (
+        options?.rewriteRecoveredLegacyFences
+        && result?.legacyRecovery === 'recovered'
+      ) {
+        writeSnippetToFile(paths, result.snippet)
+      }
+
+      return result?.snippet ?? null
+    })
     .filter((snippet): snippet is MarkdownSnippet => !!snippet)
 }
 
@@ -203,6 +242,7 @@ export function writeSnippetToFile(
   }
 
   fs.writeFileSync(snippetPath, nextContent, 'utf8')
+  rememberAppFileChange(snippetPath)
 }
 
 function upsertSnippetIndex(
@@ -246,66 +286,6 @@ export function buildSnippetTargetPath(
   const fileName = toSnippetFileName(snippet.name)
 
   return directory ? path.posix.join(directory, fileName) : fileName
-}
-
-function getCachedDirectoryEntries(
-  directoryPath: string,
-  directoryEntriesCache?: DirectoryEntriesCache,
-): string[] {
-  if (!directoryEntriesCache) {
-    return fs.readdirSync(directoryPath)
-  }
-
-  const cachedEntries = directoryEntriesCache.get(directoryPath)
-  if (cachedEntries) {
-    return cachedEntries
-  }
-
-  const entries = fs.readdirSync(directoryPath)
-  directoryEntriesCache.set(directoryPath, [...entries])
-  return entries
-}
-
-function removeDirectoryEntryFromCache(
-  directoryPath: string,
-  fileName: string,
-  directoryEntriesCache?: DirectoryEntriesCache,
-): void {
-  if (!directoryEntriesCache) {
-    return
-  }
-
-  const entries = directoryEntriesCache.get(directoryPath)
-  if (!entries) {
-    return
-  }
-
-  const normalizedFileName = fileName.toLowerCase()
-  const nextEntries = entries.filter(
-    entry => entry.toLowerCase() !== normalizedFileName,
-  )
-
-  directoryEntriesCache.set(directoryPath, nextEntries)
-}
-
-function upsertDirectoryEntryInCache(
-  directoryPath: string,
-  fileName: string,
-  directoryEntriesCache?: DirectoryEntriesCache,
-): void {
-  if (!directoryEntriesCache) {
-    return
-  }
-
-  const entries
-    = directoryEntriesCache.get(directoryPath) || fs.readdirSync(directoryPath)
-  const normalizedFileName = fileName.toLowerCase()
-  const nextEntries = entries.filter(
-    entry => entry.toLowerCase() !== normalizedFileName,
-  )
-
-  nextEntries.push(fileName)
-  directoryEntriesCache.set(directoryPath, nextEntries)
 }
 
 function assertSnippetPathAvailable(
@@ -443,6 +423,8 @@ export function persistSnippet(
   ) {
     fs.ensureDirSync(path.dirname(targetAbsolutePath))
     fs.moveSync(sourceAbsolutePath, targetAbsolutePath, { overwrite: false })
+    rememberAppFileChange(sourceAbsolutePath)
+    rememberAppFileChange(targetAbsolutePath)
 
     removeDirectoryEntryFromCache(
       path.dirname(sourceAbsolutePath),
@@ -532,6 +514,10 @@ export function findSnippetById(
   return snippet
 }
 
+/**
+ * Global content lookup is only safe for non-mutating fallback flows.
+ * Mutation paths with a known owner must scope lookup by snippet id first.
+ */
 export function findSnippetByContentId(
   snippets: MarkdownSnippet[],
   contentId: number,

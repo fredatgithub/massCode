@@ -32,6 +32,7 @@ const HTTP_DEFAULTS: HttpSettings = {
   wrapLines: true,
   defaultPreviewFormat: 'http',
   autoSwitchToResponse: true,
+  skipCertificateVerification: false,
 }
 
 const API_INTEGRATIONS_DEFAULTS: PreferencesStore['api']['integrations'] = {
@@ -43,6 +44,9 @@ const API_INTEGRATIONS_DEFAULTS: PreferencesStore['api']['integrations'] = {
 const PREFERENCES_DEFAULTS: PreferencesStore = {
   appearance: {
     theme: 'auto',
+  },
+  updates: {
+    autoUpdate: true,
   },
   localization: {
     locale: 'en_US',
@@ -226,6 +230,10 @@ function sanitizeHttpSettings(value: unknown): HttpSettings {
       typeof source.autoSwitchToResponse === 'boolean'
         ? source.autoSwitchToResponse
         : HTTP_DEFAULTS.autoSwitchToResponse,
+    skipCertificateVerification:
+      typeof source.skipCertificateVerification === 'boolean'
+        ? source.skipCertificateVerification
+        : HTTP_DEFAULTS.skipCertificateVerification,
   }
 }
 
@@ -258,6 +266,12 @@ function sanitizePreferences(value: unknown): PreferencesStore {
         'theme',
         readString(source, 'theme', PREFERENCES_DEFAULTS.appearance.theme),
       ),
+    },
+    updates: {
+      autoUpdate:
+        typeof asRecord(source.updates).autoUpdate === 'boolean'
+          ? Boolean(asRecord(source.updates).autoUpdate)
+          : PREFERENCES_DEFAULTS.updates.autoUpdate,
     },
     localization: {
       locale: readString(

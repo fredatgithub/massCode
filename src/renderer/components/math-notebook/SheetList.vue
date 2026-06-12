@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import * as ContextMenu from '@/components/ui/shadcn/context-menu'
-import { useApp, useDeleteShortcut, useMathNotebook } from '@/composables'
+import {
+  useApp,
+  useDeleteShortcut,
+  useInlineRename,
+  useMathNotebook,
+} from '@/composables'
 import { i18n } from '@/electron'
 import { onClickOutside } from '@vueuse/core'
 import { format } from 'date-fns'
-import { FileText } from 'lucide-vue-next'
+import { FileText, Search } from 'lucide-vue-next'
 
 const { isCompactListMode } = useApp()
 const {
@@ -16,12 +21,37 @@ const {
   renameSheet,
 } = useMathNotebook()
 
-const editingId = ref<string | null>(null)
-const editingName = ref('')
+const {
+  editingId,
+  editingName,
+  startRename,
+  requestRenameFromMenu,
+  handleMenuCloseAutoFocus,
+  finishRename,
+  cancelRename,
+} = useInlineRename({
+  inputSelector: '.sheet-rename-input',
+  onRename: (id, name) => renameSheet(id, name),
+})
+
 const sheetListRef = ref<HTMLElement>()
 const isSheetListFocused = ref(false)
+const searchQuery = ref('')
+
+const filteredSheets = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+
+  if (!query) {
+    return sheets.value
+  }
+
+  return sheets.value.filter(sheet =>
+    sheet.name.toLowerCase().includes(query),
+  )
+})
 
 function handleCreateSheet() {
+  searchQuery.value = ''
   const id = createSheet()
   const sheet = sheets.value.find(sheet => sheet.id === id)
 
@@ -30,27 +60,47 @@ function handleCreateSheet() {
   }
 }
 
-function startRename(id: string, currentName: string) {
-  editingId.value = id
-  editingName.value = currentName
+function scrollActiveSheetIntoView() {
   nextTick(() => {
-    const input = document.querySelector(
-      '.sheet-rename-input',
-    ) as HTMLInputElement
-    input?.focus()
-    input?.select()
+    sheetListRef.value
+      ?.querySelector(`[data-sheet-id="${activeSheetId.value}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
   })
 }
 
-function finishRename(id: string) {
-  if (editingName.value.trim()) {
-    renameSheet(id, editingName.value.trim())
+function moveSearchSelection(delta: number) {
+  const items = filteredSheets.value
+
+  if (items.length === 0) {
+    return
   }
-  editingId.value = null
+
+  const currentIndex = items.findIndex(
+    item => item.id === activeSheetId.value,
+  )
+  const nextIndex
+    = currentIndex === -1
+      ? delta > 0
+        ? 0
+        : items.length - 1
+      : Math.min(Math.max(currentIndex + delta, 0), items.length - 1)
+
+  selectSheet(items[nextIndex].id)
+  scrollActiveSheetIntoView()
 }
 
-function cancelRename() {
-  editingId.value = null
+function onSearchKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    moveSearchSelection(1)
+  }
+  else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    moveSearchSelection(-1)
+  }
+  else if (event.key === 'Escape') {
+    searchQuery.value = ''
+  }
 }
 
 function focusSheetListItem(event: MouseEvent) {
@@ -62,6 +112,11 @@ function focusSheetListItem(event: MouseEvent) {
 
   nextTick(() => {
     requestAnimationFrame(() => {
+      // A double-click both selects and starts renaming; don't pull focus
+      // away from the rename input back to the list item.
+      if (editingId.value !== null) {
+        return
+      }
       target.focus()
     })
   })
@@ -105,9 +160,21 @@ defineExpose({
     data-math-sheets-list
     class="flex h-full flex-col overflow-hidden"
   >
+    <div class="mb-1 flex items-center px-2">
+      <Search class="text-muted-foreground ml-1 h-4 w-4 shrink-0" />
+      <div class="min-w-0 flex-grow">
+        <UiInput
+          v-model="searchQuery"
+          :placeholder="i18n.t('spaces.math.searchPlaceholder')"
+          variant="ghost"
+          class="truncate"
+          @keydown="onSearchKeydown"
+        />
+      </div>
+    </div>
     <div class="scrollbar min-h-0 flex-1 overflow-y-auto px-2">
       <ContextMenu.ContextMenu
-        v-for="sheet in sheets"
+        v-for="sheet in filteredSheets"
         :key="sheet.id"
       >
         <ContextMenu.ContextMenuTrigger as-child>
@@ -115,6 +182,7 @@ defineExpose({
             class="group mb-0.5 cursor-default transition-colors duration-75"
             :class="activeSheetId === sheet.id ? 'text-accent-foreground' : ''"
             :selected="activeSheetId === sheet.id"
+            :data-sheet-id="sheet.id"
             tabindex="-1"
             @click="(event) => selectSheetFromList(sheet.id, event)"
             @dblclick="startRename(sheet.id, sheet.name)"
@@ -130,46 +198,48 @@ defineExpose({
                 :stroke-width="1.5"
               />
               <div class="min-w-0 flex-1">
-                <input
-                  v-if="editingId === sheet.id"
-                  v-model="editingName"
-                  class="sheet-rename-input w-full bg-transparent text-[13px] outline-none"
-                  @blur="finishRename(sheet.id)"
-                  @keydown.enter="finishRename(sheet.id)"
-                  @keydown.escape="cancelRename"
-                  @click.stop
+                <div
+                  :class="isCompactListMode ? 'flex items-center gap-2' : ''"
                 >
-                <template v-else>
-                  <div
-                    :class="isCompactListMode ? 'flex items-center gap-2' : ''"
+                  <input
+                    v-if="editingId === sheet.id"
+                    v-model="editingName"
+                    class="sheet-rename-input outline-primary bg-background m-0 min-w-0 rounded-sm border-0 p-0 text-[13px] leading-tight outline outline-1"
+                    :class="isCompactListMode ? 'flex-1' : 'w-full'"
+                    @blur="finishRename(sheet.id)"
+                    @keydown.enter="finishRename(sheet.id)"
+                    @keydown.escape="cancelRename"
+                    @click.stop
                   >
-                    <UiText
-                      as="div"
-                      variant="sm"
-                      class="truncate leading-tight"
-                      :class="isCompactListMode ? 'flex-1' : ''"
-                    >
-                      {{ sheet.name }}
-                    </UiText>
-                    <UiText
-                      as="div"
-                      variant="caption"
-                      class="leading-tight transition-colors"
-                      :class="isCompactListMode ? 'shrink-0' : ''"
-                      muted
-                    >
-                      {{ format(new Date(sheet.updatedAt), "dd.MM.yyyy") }}
-                    </UiText>
-                  </div>
-                </template>
+                  <UiText
+                    v-else
+                    as="div"
+                    variant="sm"
+                    class="truncate leading-tight"
+                    :class="isCompactListMode ? 'flex-1' : ''"
+                  >
+                    {{ sheet.name }}
+                  </UiText>
+                  <UiText
+                    as="div"
+                    variant="caption"
+                    class="leading-tight transition-colors"
+                    :class="isCompactListMode ? 'shrink-0' : ''"
+                    muted
+                  >
+                    {{ format(new Date(sheet.updatedAt), "dd.MM.yyyy") }}
+                  </UiText>
+                </div>
               </div>
             </div>
           </SidebarItem>
         </ContextMenu.ContextMenuTrigger>
 
-        <ContextMenu.ContextMenuContent>
+        <ContextMenu.ContextMenuContent
+          @close-auto-focus="handleMenuCloseAutoFocus"
+        >
           <ContextMenu.ContextMenuItem
-            @click="startRename(sheet.id, sheet.name)"
+            @click="requestRenameFromMenu(sheet.id, sheet.name)"
           >
             {{ i18n.t("action.rename") }}
           </ContextMenu.ContextMenuItem>
@@ -181,10 +251,14 @@ defineExpose({
       </ContextMenu.ContextMenu>
 
       <div
-        v-if="sheets.length === 0"
+        v-if="filteredSheets.length === 0"
         class="text-muted-foreground mt-8 text-center text-[12px]"
       >
-        {{ i18n.t("placeholder.emptySheetList") }}
+        {{
+          searchQuery.trim()
+            ? i18n.t("spaces.math.noResults")
+            : i18n.t("placeholder.emptySheetList")
+        }}
       </div>
     </div>
   </div>

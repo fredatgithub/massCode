@@ -74,7 +74,16 @@ app
       const storage = useStorage()
       const result = storage.snippets.getSnippets(query)
 
-      return result as SnippetsResponse
+      // Тела фрагментов не сериализуются в список: контент выбранного
+      // сниппета загружается через GET /snippets/:id.
+      return result.map(snippet => ({
+        ...snippet,
+        contents: snippet.contents.map(({ id, label, language }) => ({
+          id,
+          label,
+          language,
+        })),
+      })) as SnippetsResponse
     },
     {
       query: 'snippetsQuery',
@@ -337,6 +346,7 @@ app
     ({ params, status }) => {
       const storage = useStorage()
       const { deleted } = storage.snippets.deleteSnippetContent(
+        Number(params.id),
         Number(params.contentId),
       )
 

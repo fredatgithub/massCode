@@ -35,7 +35,7 @@ export interface NotesDashboardWidgets {
   topLinked: boolean
 }
 
-export type SpaceId = 'code' | 'tools' | 'math' | 'notes' | 'http'
+export type SpaceId = 'code' | 'tools' | 'math' | 'notes' | 'http' | 'drawings'
 export type CommandPaletteRecentTarget =
   | 'space'
   | 'snippet'
@@ -71,12 +71,14 @@ export interface DonationsState {
     notes: number
     math: number
     tools: number
+    drawings: number
   }
   created: {
     code: number
     http: number
     notes: number
     math: number
+    drawings: number
   }
   sent: {
     http: number
@@ -87,12 +89,14 @@ export interface DonationsState {
     notes: number
     math: number
     tools: number
+    drawings: number
   }
   lastShownCreatedMilestones: {
     code: number
     http: number
     notes: number
     math: number
+    drawings: number
   }
   lastShownSentMilestones: {
     http: number
@@ -143,13 +147,29 @@ export interface AppStore {
   }
   notifications: {
     lastNotifiedUpdateVersion: string
+    lastWhatsNewVersion: string
+  }
+  license: {
+    key: string | null
+    name: string | null
+    email: string | null
   }
   commandPalette: {
     recent: CommandPaletteRecentEntry[]
     usage: CommandPaletteUsageEntry[]
   }
   donations: DonationsState
+  drawings: {
+    activeDrawingId: string | null
+    viewport: Record<string, DrawingViewportState>
+  }
   activeSpaceId: SpaceId
+}
+
+export interface DrawingViewportState {
+  scrollX: number
+  scrollY: number
+  zoom: number
 }
 
 export interface EditorSettings {
@@ -192,12 +212,18 @@ export interface HttpSettings {
   wrapLines: boolean
   defaultPreviewFormat: 'http' | 'curl'
   autoSwitchToResponse: boolean
+  skipCertificateVerification: boolean
+}
+
+export interface UpdatesSettings {
+  autoUpdate: boolean
 }
 
 export interface PreferencesStore {
   appearance: {
     theme: string
   }
+  updates: UpdatesSettings
   localization: {
     locale: string
   }
