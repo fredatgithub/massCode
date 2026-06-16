@@ -8,6 +8,7 @@ import { registerIPC } from './ipc'
 import { startThemeWatcher, stopThemeWatcher } from './ipc/handlers/theme'
 import { validateStoredLicense } from './license'
 import { createMainMenu } from './menu/main'
+import { isQuitting, setQuitting } from './quitState'
 import { startMarkdownWatcher, stopMarkdownWatcher } from './storage'
 import { ensureFlatSpacesLayout } from './storage/providers/markdown/runtime/spaces'
 import { store } from './store'
@@ -24,7 +25,6 @@ const WINDOW_BOUNDS_SAVE_DELAY = 250
 
 let mainWindow: BrowserWindow
 let saveWindowBoundsTimer: ReturnType<typeof setTimeout> | null = null
-let isQuitting = false
 let migrationResult: {
   folders: number
   snippets: number
@@ -117,7 +117,7 @@ function createWindow() {
   mainWindow.on('close', (event) => {
     flushWindowBoundsSave()
 
-    if (process.platform === 'darwin' && !isQuitting) {
+    if (process.platform === 'darwin' && !isQuitting()) {
       event.preventDefault()
       mainWindow.hide()
       return
@@ -181,29 +181,44 @@ else {
           = (store.preferences.get('storage.vaultPath') as string | null)
             || path.join(storagePath, 'markdown-vault')
         ensureFlatSpacesLayout(vaultPath)
-        const { hasMarkdownVaultData } = lazyRequire(
-          './storage/providers/markdown',
-        ) as typeof import('./storage/providers/markdown')
-        const vaultHasData = hasMarkdownVaultData(vaultPath)
 
-        if (!vaultHasData) {
-          const { closeDB } = lazyRequire('./db') as typeof import('./db')
-          const { migrateSqliteToMarkdownStorage } = lazyRequire(
+        // Авто-миграция из SQLite выполняется только один раз. Флаг
+        // storage.sqliteMigrated персистентно блокирует повтор, иначе ручная
+        // очистка vault при сохранившемся massCode.db триггерила бы миграцию
+        // заново и возвращала удалённые данные.
+        const alreadyMigrated
+          = store.preferences.get('storage.sqliteMigrated') === true
+
+        if (!alreadyMigrated) {
+          const { hasMarkdownVaultData } = lazyRequire(
             './storage/providers/markdown',
           ) as typeof import('./storage/providers/markdown')
+          const vaultHasData = hasMarkdownVaultData(vaultPath)
 
-          try {
-            migrationResult = migrateSqliteToMarkdownStorage()
+          if (!vaultHasData) {
+            const { closeDB } = lazyRequire('./db') as typeof import('./db')
+            const { migrateSqliteToMarkdownStorage } = lazyRequire(
+              './storage/providers/markdown',
+            ) as typeof import('./storage/providers/markdown')
 
-            store.preferences.delete('storage.engine' as any)
-            store.preferences.delete('backup' as any)
+            try {
+              migrationResult = migrateSqliteToMarkdownStorage()
 
-            // eslint-disable-next-line no-console
-            console.log('[Auto-migration complete]', migrationResult)
+              store.preferences.delete('storage.engine' as any)
+              store.preferences.delete('backup' as any)
+
+              // eslint-disable-next-line no-console
+              console.log('[Auto-migration complete]', migrationResult)
+            }
+            finally {
+              closeDB()
+            }
           }
-          finally {
-            closeDB()
-          }
+
+          // Помечаем миграцию как выполненную в обоих случаях: после успешной
+          // миграции и как backfill для пользователей, уже мигрировавших в
+          // прошлых версиях (vault с данными, но без флага).
+          store.preferences.set('storage.sqliteMigrated', true)
         }
       }
     }
@@ -267,7 +282,7 @@ else {
   })
 
   app.on('before-quit', () => {
-    isQuitting = true
+    setQuitting(true)
     flushWindowBoundsSave()
     stopThemeWatcher()
     stopMarkdownWatcher()

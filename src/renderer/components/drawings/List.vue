@@ -2,8 +2,10 @@
 import * as ContextMenu from '@/components/ui/shadcn/context-menu'
 import {
   useApp,
+  useContentSort,
   useCopyToClipboard,
   useDeleteShortcut,
+  useDialog,
   useDrawings,
   useInlineRename,
 } from '@/composables'
@@ -24,6 +26,8 @@ const {
   selectDrawing,
 } = useDrawings()
 const copyToClipboard = useCopyToClipboard()
+const { contentSortState } = useContentSort()
+const { confirm } = useDialog()
 
 function copyLinkForNote(name: string) {
   copyToClipboard(`![${name}](masscode://drawing/${encodeURIComponent(name)})`)
@@ -46,14 +50,30 @@ const drawingListRef = ref<HTMLElement>()
 const isDrawingListFocused = ref(false)
 const searchQuery = ref('')
 
+function compareDrawingNames(a: string, b: string) {
+  return a.localeCompare(b, undefined, { sensitivity: 'base' })
+}
+
+const sortedDrawings = computed(() => {
+  const { sort, order } = contentSortState.drawings
+  const direction = order === 'ASC' ? 1 : -1
+
+  return [...drawings.value].sort((a, b) => {
+    const result
+      = sort === 'name' ? compareDrawingNames(a.name, b.name) : a[sort] - b[sort]
+
+    return result * direction
+  })
+})
+
 const filteredDrawings = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
   if (!query) {
-    return drawings.value
+    return sortedDrawings.value
   }
 
-  return drawings.value.filter(drawing =>
+  return sortedDrawings.value.filter(drawing =>
     drawing.name.toLowerCase().includes(query),
   )
 })
@@ -135,12 +155,29 @@ function selectDrawingFromList(id: string, event: MouseEvent) {
   focusDrawingListItem(event)
 }
 
+async function confirmDeleteDrawing(id: string) {
+  const drawing = drawings.value.find(item => item.id === id)
+
+  const isConfirmed = await confirm({
+    title: i18n.t('messages:confirm.deletePermanently', {
+      name: drawing?.name ?? '',
+    }),
+    content: i18n.t('messages:warning.noUndo'),
+  })
+
+  if (!isConfirmed) {
+    return
+  }
+
+  await deleteDrawing(id)
+}
+
 function deleteActiveDrawing() {
   if (!activeDrawingId.value) {
     return
   }
 
-  void deleteDrawing(activeDrawingId.value)
+  void confirmDeleteDrawing(activeDrawingId.value)
 }
 
 useDeleteShortcut({
@@ -213,7 +250,7 @@ defineExpose({
                   <input
                     v-if="editingId === drawing.id"
                     v-model="editingName"
-                    class="drawing-rename-input outline-primary bg-background m-0 min-w-0 rounded-sm border-0 p-0 text-[13px] leading-tight outline outline-1"
+                    class="drawing-rename-input outline-primary bg-background m-0 block min-w-0 rounded-sm border-0 p-0 text-[13px] leading-tight outline outline-1"
                     :class="isCompactListMode ? 'flex-1' : 'w-full'"
                     @blur="finishRename(drawing.id)"
                     @keydown.enter="finishRename(drawing.id)"
@@ -263,7 +300,9 @@ defineExpose({
             {{ i18n.t("spaces.drawings.exportImage") }}
           </ContextMenu.ContextMenuItem>
           <ContextMenu.ContextMenuSeparator />
-          <ContextMenu.ContextMenuItem @click="deleteDrawing(drawing.id)">
+          <ContextMenu.ContextMenuItem
+            @click="confirmDeleteDrawing(drawing.id)"
+          >
             {{ i18n.t("action.delete.common") }}
           </ContextMenu.ContextMenuItem>
         </ContextMenu.ContextMenuContent>

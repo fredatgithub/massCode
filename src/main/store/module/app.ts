@@ -5,6 +5,7 @@ import type {
   CommandPaletteRecentTarget,
   CommandPaletteUsageEntry,
   CommandPaletteUsageTarget,
+  ContentSortState,
   DonationsState,
   DrawingViewportState,
   HttpState,
@@ -36,6 +37,10 @@ const APP_STORE_DEFAULTS: AppStore = {
   },
   code: {
     selection: {},
+    contentSort: {
+      sort: 'createdAt',
+      order: 'DESC',
+    },
     layout: {
       mode: 'all-panels',
       tagsListHeight: LAYOUT_DEFAULTS.tags.height,
@@ -43,6 +48,10 @@ const APP_STORE_DEFAULTS: AppStore = {
   },
   http: {
     selection: {},
+    contentSort: {
+      sort: 'createdAt',
+      order: 'DESC',
+    },
     layout: {
       mode: 'all-panels',
       environmentsListHeight: LAYOUT_DEFAULTS.http.environmentsPanel.height,
@@ -50,6 +59,10 @@ const APP_STORE_DEFAULTS: AppStore = {
   },
   notes: {
     selection: {},
+    contentSort: {
+      sort: 'createdAt',
+      order: 'DESC',
+    },
     route: 'notes-space',
     editorMode: 'livePreview',
     dashboard: {
@@ -64,6 +77,12 @@ const APP_STORE_DEFAULTS: AppStore = {
     layout: {
       mode: 'all-panels',
       tagsListHeight: LAYOUT_DEFAULTS.tags.height,
+    },
+  },
+  math: {
+    contentSort: {
+      sort: 'createdAt',
+      order: 'DESC',
     },
   },
   notifications: {
@@ -122,6 +141,10 @@ const APP_STORE_DEFAULTS: AppStore = {
     lastGreetingDay: '',
   },
   drawings: {
+    contentSort: {
+      sort: 'createdAt',
+      order: 'DESC',
+    },
     activeDrawingId: null,
     viewport: {},
   },
@@ -308,6 +331,20 @@ function sanitizeDonations(value: unknown): DonationsState {
   }
 }
 
+function sanitizeContentSort(value: unknown): ContentSortState {
+  const source = asRecord(value)
+
+  return {
+    sort: readEnum(
+      source,
+      'sort',
+      ['createdAt', 'updatedAt', 'name'] as const,
+      'createdAt',
+    ),
+    order: readEnum(source, 'order', ['ASC', 'DESC'] as const, 'DESC'),
+  }
+}
+
 function sanitizeCommandPaletteRecent(
   value: unknown,
 ): CommandPaletteRecentEntry[] {
@@ -490,6 +527,7 @@ function sanitizeAppStore(value: unknown): AppStore {
           ? codeSource.selection
           : source.state,
       ),
+      contentSort: sanitizeContentSort(codeSource.contentSort),
       layout: {
         mode: readEnum(
           codeLayoutSource,
@@ -520,6 +558,7 @@ function sanitizeAppStore(value: unknown): AppStore {
     },
     http: {
       selection: sanitizeHttpState(httpSource.selection),
+      contentSort: sanitizeContentSort(httpSource.contentSort),
       layout: {
         mode: readEnum(
           httpLayoutSource,
@@ -559,6 +598,7 @@ function sanitizeAppStore(value: unknown): AppStore {
           ? notesSource.selection
           : source.notesState,
       ),
+      contentSort: sanitizeContentSort(notesSource.contentSort),
       route: readEnum(
         notesSource,
         'route',
@@ -677,7 +717,11 @@ function sanitizeAppStore(value: unknown): AppStore {
       usage: sanitizeCommandPaletteUsage(commandPaletteSource.usage),
     },
     donations: sanitizeDonations(source.donations),
+    math: {
+      contentSort: sanitizeContentSort(asRecord(source.math).contentSort),
+    },
     drawings: {
+      contentSort: sanitizeContentSort(asRecord(source.drawings).contentSort),
       activeDrawingId:
         typeof asRecord(source.drawings).activeDrawingId === 'string'
           ? String(asRecord(source.drawings).activeDrawingId)

@@ -170,6 +170,30 @@ describe('preferences store sanitization', () => {
     ).toBeUndefined()
   })
 
+  it('keeps persisted sqliteMigrated flag and defaults it to false', async () => {
+    persistedStateByName.preferences = {
+      storage: {
+        sqliteMigrated: true,
+      },
+    }
+
+    const { default: preferences } = await import('../module/preferences')
+
+    expect(preferences.get('storage.sqliteMigrated' as any)).toBe(true)
+  })
+
+  it('defaults sqliteMigrated to false for invalid or missing value', async () => {
+    persistedStateByName.preferences = {
+      storage: {
+        sqliteMigrated: 'bad',
+      },
+    }
+
+    const { default: preferences } = await import('../module/preferences')
+
+    expect(preferences.get('storage.sqliteMigrated' as any)).toBe(false)
+  })
+
   it('keeps persisted http settings and prunes stale values', async () => {
     persistedStateByName.preferences = {
       http: {
@@ -245,6 +269,13 @@ describe('app store sanitization', () => {
         codeLayoutMode: 'all-panels',
         legacyStateFlag: true,
       },
+      code: {
+        contentSort: {
+          sort: 'updatedAt',
+          order: 'ASC',
+          garbage: 'bad',
+        },
+      },
       compactListMode: true,
       sizes: {
         tagsListHeight: 30,
@@ -263,6 +294,13 @@ describe('app store sanitization', () => {
         legacyNotesStateFlag: true,
       },
       notesEditorMode: 'preview',
+      notes: {
+        contentSort: {
+          sort: 'name',
+          order: 'DESC',
+          garbage: 'bad',
+        },
+      },
       lastNotifiedUpdateVersion: '4.7.1',
       legacyRootFlag: true,
     }
@@ -278,6 +316,11 @@ describe('app store sanitization', () => {
       folderId: 5,
     })
     expect(app.get('code.layout.mode' as any)).toBe('all-panels')
+    expect(app.get('code.contentSort' as any)).toEqual({
+      sort: 'updatedAt',
+      order: 'ASC',
+    })
+    expect(app.get('code.contentSort.garbage' as any)).toBeUndefined()
     expect(app.get('ui.compactListMode' as any)).toBe(true)
     expect(app.get('code.layout.tagsListHeight' as any)).toBe(200)
     expect(app.get('code.layout.threePanel' as any)).toEqual([15, 20, 65])
@@ -287,6 +330,11 @@ describe('app store sanitization', () => {
       folderId: 7,
     })
     expect(app.get('notes.editorMode' as any)).toBe('preview')
+    expect(app.get('notes.contentSort' as any)).toEqual({
+      sort: 'name',
+      order: 'DESC',
+    })
+    expect(app.get('notes.contentSort.garbage' as any)).toBeUndefined()
     expect(app.get('notes.layout.mode' as any)).toBe('list-editor')
     expect(app.get('notes.layout.threePanel' as any)).toEqual([10, 25, 65])
     expect(app.get('notes.layout.twoPanel' as any)).toBeUndefined()
@@ -433,6 +481,11 @@ describe('app store sanitization', () => {
   it('keeps persisted http layout values', async () => {
     persistedStateByName.app = {
       http: {
+        contentSort: {
+          sort: 'updatedAt',
+          order: 'ASC',
+          garbage: 'bad',
+        },
         layout: {
           mode: 'list-editor',
           environmentsListHeight: 180,
@@ -447,11 +500,48 @@ describe('app store sanitization', () => {
     const { default: app } = await import('../module/app')
 
     expect(app.get('http.layout.mode' as any)).toBe('list-editor')
+    expect(app.get('http.contentSort' as any)).toEqual({
+      sort: 'updatedAt',
+      order: 'ASC',
+    })
+    expect(app.get('http.contentSort.garbage' as any)).toBeUndefined()
     expect(app.get('http.layout.environmentsListHeight' as any)).toBe(180)
     expect(app.get('http.layout.threePanel' as any)).toEqual([20, 30])
     expect(app.get('http.layout.twoPanel' as any)).toBe(35)
     expect(app.get('http.layout.responsePanelHeight' as any)).toBe(360)
     expect(app.get('http.layout.garbage' as any)).toBeUndefined()
+  })
+
+  it('keeps persisted local-space sort values', async () => {
+    persistedStateByName.app = {
+      math: {
+        contentSort: {
+          sort: 'updatedAt',
+          order: 'ASC',
+          garbage: 'bad',
+        },
+      },
+      drawings: {
+        contentSort: {
+          sort: 'name',
+          order: 'DESC',
+          garbage: 'bad',
+        },
+      },
+    }
+
+    const { default: app } = await import('../module/app')
+
+    expect(app.get('math.contentSort' as any)).toEqual({
+      sort: 'updatedAt',
+      order: 'ASC',
+    })
+    expect(app.get('math.contentSort.garbage' as any)).toBeUndefined()
+    expect(app.get('drawings.contentSort' as any)).toEqual({
+      sort: 'name',
+      order: 'DESC',
+    })
+    expect(app.get('drawings.contentSort.garbage' as any)).toBeUndefined()
   })
 
   it('keeps persisted http donation counters', async () => {

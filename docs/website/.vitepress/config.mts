@@ -83,6 +83,7 @@ export default defineConfig({
     nav: [
       { text: 'Documentation', link: '/documentation/' },
       { text: 'Compare', link: '/compare/' },
+      { text: 'Blog', link: '/blog/' },
       { text: 'Sponsor', link: '/sponsor/' },
       { text: 'Donate', link: '/donate/' },
       {
@@ -95,6 +96,15 @@ export default defineConfig({
     ],
 
     sidebar: {
+      '/blog/': [
+        {
+          text: 'Blog',
+          items: [
+            { text: 'Overview', link: '/blog/' },
+            { text: 'How to Organize Code Snippets', link: '/blog/how-to-organize-code-snippets' },
+          ],
+        },
+      ],
       '/compare/': [
         {
           text: 'Compare',
@@ -104,11 +114,16 @@ export default defineConfig({
             { text: 'massCode vs Cacher', link: '/compare/cacher' },
             { text: 'massCode vs SnippetsLab', link: '/compare/snippetslab' },
             { text: 'massCode vs Raycast Snippets', link: '/compare/raycast' },
+            { text: 'massCode vs GitHub Gist', link: '/compare/github-gist' },
+            { text: 'massCode vs Postman', link: '/compare/postman' },
             { text: 'massCode vs Todoist', link: '/compare/todoist' },
             { text: 'massCode vs TickTick', link: '/compare/ticktick' },
             { text: 'massCode vs Things 3', link: '/compare/things' },
             { text: 'massCode vs Apple Reminders', link: '/compare/apple-reminders' },
             { text: 'massCode vs Obsidian Tasks', link: '/compare/obsidian-tasks' },
+            { text: 'Best Code Snippet Managers', link: '/compare/best-code-snippet-managers' },
+            { text: 'Code Snippet Manager for Mac', link: '/compare/code-snippet-manager-for-mac' },
+            { text: 'Code Snippet Manager for Windows', link: '/compare/code-snippet-manager-for-windows' },
             { text: 'Best Open-Source Snippet Manager', link: '/compare/best-open-source' },
             { text: 'Local-First Alternative to Pieces / Cacher', link: '/compare/local-first' },
             { text: 'Markdown-First Task Manager', link: '/compare/markdown-first-tasks' },

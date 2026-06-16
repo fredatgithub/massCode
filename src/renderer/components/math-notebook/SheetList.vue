@@ -2,7 +2,9 @@
 import * as ContextMenu from '@/components/ui/shadcn/context-menu'
 import {
   useApp,
+  useContentSort,
   useDeleteShortcut,
+  useDialog,
   useInlineRename,
   useMathNotebook,
 } from '@/composables'
@@ -20,6 +22,8 @@ const {
   selectSheet,
   renameSheet,
 } = useMathNotebook()
+const { contentSortState } = useContentSort()
+const { confirm } = useDialog()
 
 const {
   editingId,
@@ -38,14 +42,30 @@ const sheetListRef = ref<HTMLElement>()
 const isSheetListFocused = ref(false)
 const searchQuery = ref('')
 
+function compareSheetNames(a: string, b: string) {
+  return a.localeCompare(b, undefined, { sensitivity: 'base' })
+}
+
+const sortedSheets = computed(() => {
+  const { sort, order } = contentSortState.math
+  const direction = order === 'ASC' ? 1 : -1
+
+  return [...sheets.value].sort((a, b) => {
+    const result
+      = sort === 'name' ? compareSheetNames(a.name, b.name) : a[sort] - b[sort]
+
+    return result * direction
+  })
+})
+
 const filteredSheets = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
   if (!query) {
-    return sheets.value
+    return sortedSheets.value
   }
 
-  return sheets.value.filter(sheet =>
+  return sortedSheets.value.filter(sheet =>
     sheet.name.toLowerCase().includes(query),
   )
 })
@@ -128,12 +148,29 @@ function selectSheetFromList(id: string, event: MouseEvent) {
   focusSheetListItem(event)
 }
 
+async function confirmDeleteSheet(id: string) {
+  const sheet = sheets.value.find(item => item.id === id)
+
+  const isConfirmed = await confirm({
+    title: i18n.t('messages:confirm.deletePermanently', {
+      name: sheet?.name ?? '',
+    }),
+    content: i18n.t('messages:warning.noUndo'),
+  })
+
+  if (!isConfirmed) {
+    return
+  }
+
+  deleteSheet(id)
+}
+
 function deleteActiveSheet() {
   if (!activeSheetId.value) {
     return
   }
 
-  deleteSheet(activeSheetId.value)
+  void confirmDeleteSheet(activeSheetId.value)
 }
 
 useDeleteShortcut({
@@ -184,7 +221,7 @@ defineExpose({
             :selected="activeSheetId === sheet.id"
             :data-sheet-id="sheet.id"
             tabindex="-1"
-            @click="(event) => selectSheetFromList(sheet.id, event)"
+            @click="selectSheetFromList(sheet.id, $event)"
             @dblclick="startRename(sheet.id, sheet.name)"
           >
             <div class="flex items-center gap-2 px-2 py-0.5">
@@ -204,7 +241,7 @@ defineExpose({
                   <input
                     v-if="editingId === sheet.id"
                     v-model="editingName"
-                    class="sheet-rename-input outline-primary bg-background m-0 min-w-0 rounded-sm border-0 p-0 text-[13px] leading-tight outline outline-1"
+                    class="sheet-rename-input outline-primary bg-background m-0 block min-w-0 rounded-sm border-0 p-0 text-[13px] leading-tight outline outline-1"
                     :class="isCompactListMode ? 'flex-1' : 'w-full'"
                     @blur="finishRename(sheet.id)"
                     @keydown.enter="finishRename(sheet.id)"
@@ -244,7 +281,7 @@ defineExpose({
             {{ i18n.t("action.rename") }}
           </ContextMenu.ContextMenuItem>
           <ContextMenu.ContextMenuSeparator />
-          <ContextMenu.ContextMenuItem @click="deleteSheet(sheet.id)">
+          <ContextMenu.ContextMenuItem @click="confirmDeleteSheet(sheet.id)">
             {{ i18n.t("action.delete.common") }}
           </ContextMenu.ContextMenuItem>
         </ContextMenu.ContextMenuContent>
