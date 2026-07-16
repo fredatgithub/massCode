@@ -193,6 +193,8 @@ const isNameValidationTooltipOpen = computed(() => {
   return isNameFocused.value && Boolean(nameValidationMessage.value)
 })
 
+const notesEditorRef = useTemplateRef('notesEditorRef')
+
 function onNoteNameFocus() {
   isNameFocused.value = true
   onNameFocus()
@@ -206,6 +208,24 @@ function onNameBlur() {
   isNameFocused.value = false
   onBlur()
   isFocusedNoteName.value = false
+}
+
+function onNameKeydown(event: KeyboardEvent) {
+  if (
+    (event.key !== 'Enter' && event.key !== 'Tab')
+    || event.shiftKey
+    || nameValidationIssue.value
+    || hasNameConflict.value
+  ) {
+    return
+  }
+
+  event.preventDefault()
+  hideNotesViewModes()
+
+  nextTick(() => {
+    notesEditorRef.value?.focusEditor()
+  })
 }
 
 const editorContent = ref('')
@@ -276,8 +296,12 @@ onBeforeUnmount(() => {
 <template>
   <div
     v-if="selectedNote"
-    class="flex h-full flex-col pt-[var(--content-top-offset)]"
+    class="relative flex h-full flex-col pt-[var(--content-top-offset)]"
   >
+    <UiLoadingOverlay
+      v-if="selectedNote.pendingCloudDownload"
+      :label="i18n.t('cloudDownloads.itemPending')"
+    />
     <div data-notes-editor-header>
       <div
         class="border-border grid grid-cols-[1fr_auto] items-center border-b px-2 pb-1"
@@ -314,6 +338,7 @@ onBeforeUnmount(() => {
                 :select="isFocusedNoteName"
                 @focus="onNoteNameFocus"
                 @blur="onNameBlur"
+                @keydown="onNameKeydown"
               />
             </UiInputValidationTooltip>
           </div>
@@ -366,6 +391,7 @@ onBeforeUnmount(() => {
       >
         <div class="min-h-0">
           <NotesEditor
+            ref="notesEditorRef"
             v-model:content="content"
             :mode="notesEditorMode"
             :note-id="editorNoteId"

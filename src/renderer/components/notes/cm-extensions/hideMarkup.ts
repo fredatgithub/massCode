@@ -1,7 +1,10 @@
-import type { Range } from '@codemirror/state'
+import type { EditorState, Range } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
+import type { SyntaxNode } from '@lezer/common'
 import { syntaxTree } from '@codemirror/language'
 import { Decoration, ViewPlugin } from '@codemirror/view'
+import { isStandaloneFencedCode } from './fencedCodeStyles'
+import { getRevealSelection, revealSelectionChanged } from './revealSelection'
 
 const HIDEABLE_MARKS = new Set([
   'HeaderMark',
@@ -35,6 +38,33 @@ export function shouldHideUrlNodeInMarkup(
   return parentName === 'Link' || parentName === 'Image'
 }
 
+export function shouldKeepStandaloneFencedCodeMarkup(
+  nodeName: string,
+  parent: SyntaxNode | null,
+): boolean {
+  return (
+    (nodeName === 'CodeMark' || nodeName === 'CodeInfo')
+    && parent !== null
+    && isStandaloneFencedCode(parent)
+  )
+}
+
+export function createMarkupHidingDecoration(
+  nodeName: string,
+  parentName: string | null | undefined,
+): Decoration {
+  if (
+    (nodeName === 'CodeMark' || nodeName === 'CodeInfo')
+    && parentName === 'FencedCode'
+  ) {
+    return Decoration.mark({
+      attributes: { style: 'visibility:hidden' },
+    })
+  }
+
+  return Decoration.replace({})
+}
+
 function isInternalLinkBracket(
   view: EditorView,
   node: { name: string, from: number, to: number },
@@ -57,7 +87,7 @@ function isInternalLinkBracket(
 }
 
 function isCursorInRange(view: EditorView, from: number, to: number): boolean {
-  for (const range of view.state.selection.ranges) {
+  for (const range of getRevealSelection(view.state).ranges) {
     if (range.from <= to && range.to >= from)
       return true
   }
@@ -65,7 +95,7 @@ function isCursorInRange(view: EditorView, from: number, to: number): boolean {
 }
 
 function isCursorOnLine(view: EditorView, lineNumber: number): boolean {
-  for (const range of view.state.selection.ranges) {
+  for (const range of getRevealSelection(view.state).ranges) {
     const startLine = view.state.doc.lineAt(range.from).number
     const endLine = view.state.doc.lineAt(range.to).number
     if (lineNumber >= startLine && lineNumber <= endLine)
@@ -126,6 +156,10 @@ function buildHideDecorations(view: EditorView, alwaysHide: boolean) {
         if (isInternalLinkBracket(view, node))
           return
 
+        if (shouldKeepStandaloneFencedCodeMarkup(node.name, node.node.parent)) {
+          return
+        }
+
         if (shouldShowMark(view, node, alwaysHide))
           return
 
@@ -136,7 +170,12 @@ function buildHideDecorations(view: EditorView, alwaysHide: boolean) {
             end = node.to + 1
         }
 
-        decorations.push(Decoration.replace({}).range(node.from, end))
+        decorations.push(
+          createMarkupHidingDecoration(node.name, node.node.parent?.name).range(
+            node.from,
+            end,
+          ),
+        )
       },
     })
   }
@@ -160,6 +199,8 @@ export function createHideMarkup(options: HideMarkupOptions = {}) {
         selectionSet: boolean
         viewportChanged: boolean
         focusChanged: boolean
+        startState: EditorState
+        state: EditorState
         view: EditorView
       }) {
         if (
@@ -167,6 +208,7 @@ export function createHideMarkup(options: HideMarkupOptions = {}) {
           || update.selectionSet
           || update.viewportChanged
           || update.focusChanged
+          || revealSelectionChanged(update)
         ) {
           this.decorations = buildHideDecorations(update.view, alwaysHide)
         }

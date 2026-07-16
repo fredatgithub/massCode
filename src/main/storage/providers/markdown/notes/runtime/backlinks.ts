@@ -1,5 +1,10 @@
 import type { InternalLinkLookupItem } from '../../../../../../shared/notes/internalLinks'
-import type { MarkdownNote, NotesPaths, NotesState } from './types'
+import type {
+  DeferredBacklinkRewriteOp,
+  MarkdownNote,
+  NotesPaths,
+  NotesState,
+} from './types'
 import {
   normalizeInternalLinkLookupKey,
   rewriteInternalLinks,
@@ -7,7 +12,11 @@ import {
 import { getPaths, getVaultPath } from '../../runtime/paths'
 import { getRuntimeCache } from '../../runtime/sync'
 import { createInternalLinkResolver } from './internalLinkResolver'
-import { writeNoteToFile } from './notes'
+import {
+  ensureAllNoteContentsLoaded,
+  ensureNoteContentLoaded,
+  writeNoteToFile,
+} from './notes'
 import { buildNotesFolderPathMap } from './paths'
 import { invalidateNotesSearchIndex } from './search'
 
@@ -104,6 +113,139 @@ function loadSnippetLookup(): InternalLinkLookupItem[] {
   }
 }
 
+// Отложенные rewrite'ы для заметок, чьё содержимое ещё не докачано из
+// облака в момент rename/move: применяются при гидрации заметки, чтобы её
+// [[ссылки]] не остались указывать на старое имя. Очередь хранится в
+// notes state сериализуемыми спеками (DeferredBacklinkRewriteOp) и потому
+// переживает перезапуск приложения и смену vault.
+
+function addPendingLinkerToOp(
+  op: DeferredBacklinkRewriteOp,
+  noteId: number,
+  linkerFolderPath: string,
+): void {
+  if (!op.pendingNoteIds.includes(noteId)) {
+    op.pendingNoteIds.push(noteId)
+  }
+
+  op.linkerFolderPathByNoteId[String(noteId)] = linkerFolderPath
+}
+
+function queueDeferredBacklinkRewriteOp(
+  state: NotesState,
+  op: DeferredBacklinkRewriteOp,
+): void {
+  if (!op.pendingNoteIds.length) {
+    return
+  }
+
+  state.deferredBacklinkRewrites ??= []
+  state.deferredBacklinkRewrites.push(op)
+}
+
+function removeNoteFromDeferredOps(state: NotesState, noteId: number): void {
+  if (!state.deferredBacklinkRewrites) {
+    return
+  }
+
+  for (const op of state.deferredBacklinkRewrites) {
+    const index = op.pendingNoteIds.indexOf(noteId)
+    if (index !== -1) {
+      op.pendingNoteIds.splice(index, 1)
+      delete op.linkerFolderPathByNoteId[String(noteId)]
+    }
+  }
+
+  state.deferredBacklinkRewrites = state.deferredBacklinkRewrites.filter(
+    op => op.pendingNoteIds.length > 0,
+  )
+
+  if (!state.deferredBacklinkRewrites.length) {
+    delete state.deferredBacklinkRewrites
+  }
+}
+
+// Восстанавливает rewrite-функцию из сериализованной спеки: резолвит каждую
+// [[ссылку]] по lookup имён до переименования и подменяет target, если
+// ссылка указывала на переименованную заметку.
+function buildDeferredRewrite(
+  op: DeferredBacklinkRewriteOp,
+  noteId: number,
+): (content: string) => string | null {
+  const resolver = createInternalLinkResolver(op.preLookup)
+  const linkerFolderPath = op.linkerFolderPathByNoteId[String(noteId)] ?? ''
+
+  return content =>
+    rewriteInternalLinks(content, (match) => {
+      if (match.legacyTarget) {
+        return null
+      }
+      if (op.linkKind === 'bare' && match.pathSegments.length > 0) {
+        return null
+      }
+      if (op.linkKind === 'path' && match.pathSegments.length === 0) {
+        return null
+      }
+
+      const resolved = resolver.resolve(match.target, { linkerFolderPath })
+      if (resolved === null || resolved.type !== 'note') {
+        return null
+      }
+
+      const newTarget = op.targetsById[String(resolved.id)]
+      if (newTarget === undefined || newTarget === match.target) {
+        return null
+      }
+
+      return newTarget
+    })
+}
+
+export function applyDeferredBacklinkRewrites(
+  paths: NotesPaths,
+  state: NotesState,
+  note: MarkdownNote,
+): boolean {
+  const ops = state.deferredBacklinkRewrites?.filter(op =>
+    op.pendingNoteIds.includes(note.id),
+  )
+  if (!ops?.length || note.pendingCloudDownload) {
+    return false
+  }
+
+  if (note.content === null && !ensureNoteContentLoaded(paths, note)) {
+    return false
+  }
+
+  let content = note.content ?? ''
+  let changed = false
+
+  for (const op of ops) {
+    const rewritten = buildDeferredRewrite(op, note.id)(content)
+    if (rewritten !== null) {
+      content = rewritten
+      changed = true
+    }
+  }
+
+  if (changed) {
+    note.content = content
+    note.updatedAt = Date.now()
+
+    // Файл испарился между гидрацией и записью (eviction): заметка остаётся
+    // в очереди, rewrite применится при следующей гидрации.
+    if (!writeNoteToFile(paths, note, { skipIfUnavailable: true })) {
+      return false
+    }
+
+    invalidateNotesSearchIndex(state)
+  }
+
+  removeNoteFromDeferredOps(state, note.id)
+
+  return changed
+}
+
 export function rewriteBacklinksAfterNoteUpdate(
   input: RewriteBacklinksAfterNoteUpdateInput,
 ): number {
@@ -128,6 +270,10 @@ export function rewriteBacklinksAfterNoteUpdate(
   if (!nameChanged && !folderChanged) {
     return 0
   }
+
+  // Переписывание [[ссылок]] сканирует тела всех заметок: ленивые записи
+  // сначала дочитываются, иначе их ссылки молча остались бы битыми.
+  ensureAllNoteContentsLoaded(paths, notes)
 
   const snippetLookup = loadSnippetLookup()
   const folderPathMap = buildNotesFolderPathMap(state)
@@ -181,15 +327,19 @@ export function rewriteBacklinksAfterNoteUpdate(
   let rewrittenCount = 0
   const now = Date.now()
 
-  for (const note of notes) {
-    if (note.id === updatedNoteId || note.isDeleted || !note.content) {
-      continue
-    }
+  const deferredOp: DeferredBacklinkRewriteOp = {
+    linkKind: 'any',
+    linkerFolderPathByNoteId: {},
+    pendingNoteIds: [],
+    preLookup,
+    targetsById: { [String(updatedNoteId)]: updatedTarget },
+  }
 
-    const linkerFolderPath
-      = note.folderId === null ? '' : (folderPathMap.get(note.folderId) ?? '')
-
-    const rewritten = rewriteInternalLinks(note.content, (match) => {
+  const rewriteLinkerContent = (
+    content: string,
+    linkerFolderPath: string,
+  ): string | null =>
+    rewriteInternalLinks(content, (match) => {
       if (match.legacyTarget) {
         return null
       }
@@ -206,15 +356,46 @@ export function rewriteBacklinksAfterNoteUpdate(
       return updatedTarget
     })
 
+  for (const note of notes) {
+    if (note.id === updatedNoteId || note.isDeleted) {
+      continue
+    }
+
+    const linkerFolderPath
+      = note.folderId === null ? '' : (folderPathMap.get(note.folderId) ?? '')
+
+    // Тело ещё в облаке — rewrite откладывается и применится при гидрации.
+    // content === null означает, что тело не догрузилось (файл стал
+    // placeholder после скана, флаг ещё не обновился): тоже откладываем.
+    if (note.pendingCloudDownload || note.content === null) {
+      addPendingLinkerToOp(deferredOp, note.id, linkerFolderPath)
+      continue
+    }
+
+    if (!note.content) {
+      continue
+    }
+
+    const rewritten = rewriteLinkerContent(note.content, linkerFolderPath)
+
     if (rewritten === null) {
       continue
     }
 
     note.content = rewritten
     note.updatedAt = now
-    writeNoteToFile(paths, note)
+
+    // Файл испарился между проверкой и записью (eviction): rewrite
+    // откладывается и применится при гидрации.
+    if (!writeNoteToFile(paths, note, { skipIfUnavailable: true })) {
+      addPendingLinkerToOp(deferredOp, note.id, linkerFolderPath)
+      continue
+    }
+
     rewrittenCount++
   }
+
+  queueDeferredBacklinkRewriteOp(state, deferredOp)
 
   if (nameChanged) {
     const nextKey = normalizeInternalLinkLookupKey(nextName)
@@ -255,6 +436,10 @@ export function promoteBareBacklinksOnConflict(
     return 0
   }
 
+  // Переписывание [[ссылок]] сканирует тела всех заметок: ленивые записи
+  // сначала дочитываются, иначе их ссылки молча остались бы битыми.
+  ensureAllNoteContentsLoaded(paths, notes)
+
   const folderPathMap = buildNotesFolderPathMap(state)
   const noteFolderPath = (note: MarkdownNote): string =>
     note.folderId === null ? '' : (folderPathMap.get(note.folderId) ?? '')
@@ -286,13 +471,19 @@ export function promoteBareBacklinksOnConflict(
 
     const newTarget = `${targetItem.folderPath}/${targetItem.name}`
 
-    for (const linker of notes) {
-      if (linker.id === noteId || linker.isDeleted || !linker.content) {
-        continue
-      }
+    const deferredOp: DeferredBacklinkRewriteOp = {
+      linkKind: 'bare',
+      linkerFolderPathByNoteId: {},
+      pendingNoteIds: [],
+      preLookup,
+      targetsById: { [String(noteId)]: newTarget },
+    }
 
-      const linkerFolderPath = noteFolderPath(linker)
-      const rewritten = rewriteInternalLinks(linker.content, (match) => {
+    const rewriteLinkerContent = (
+      content: string,
+      linkerFolderPath: string,
+    ): string | null =>
+      rewriteInternalLinks(content, (match) => {
         if (match.legacyTarget) {
           return null
         }
@@ -317,18 +508,49 @@ export function promoteBareBacklinksOnConflict(
         return newTarget
       })
 
+    for (const linker of notes) {
+      if (linker.id === noteId || linker.isDeleted) {
+        continue
+      }
+
+      const linkerFolderPath = noteFolderPath(linker)
+
+      // Тело ещё в облаке — rewrite откладывается и применится при
+      // гидрации. content === null означает, что тело не догрузилось (файл
+      // стал placeholder после скана, флаг ещё не обновился): тоже
+      // откладываем.
+      if (linker.pendingCloudDownload || linker.content === null) {
+        addPendingLinkerToOp(deferredOp, linker.id, linkerFolderPath)
+        continue
+      }
+
+      if (!linker.content) {
+        continue
+      }
+
+      const rewritten = rewriteLinkerContent(linker.content, linkerFolderPath)
+
       if (rewritten === null) {
         continue
       }
 
       linker.content = rewritten
       linker.updatedAt = now
-      writeNoteToFile(paths, linker)
+
+      // Файл испарился между проверкой и записью (eviction): rewrite
+      // откладывается и применится при гидрации.
+      if (!writeNoteToFile(paths, linker, { skipIfUnavailable: true })) {
+        addPendingLinkerToOp(deferredOp, linker.id, linkerFolderPath)
+        continue
+      }
+
       if (!rewrittenLinkers.has(linker.id)) {
         rewrittenLinkers.add(linker.id)
         total++
       }
     }
+
+    queueDeferredBacklinkRewriteOp(state, deferredOp)
   }
 
   if (total > 0) {
@@ -353,6 +575,10 @@ export function rewriteBacklinksAfterFolderUpdate(
   if (affectedFolderIds.size === 0) {
     return 0
   }
+
+  // Переписывание [[ссылок]] сканирует тела всех заметок: ленивые записи
+  // сначала дочитываются, иначе их ссылки молча остались бы битыми.
+  ensureAllNoteContentsLoaded(paths, notes)
 
   const affectedNoteIds = new Set<number>()
   for (const note of notes) {
@@ -402,17 +628,33 @@ export function rewriteBacklinksAfterFolderUpdate(
   let rewrittenCount = 0
   const now = Date.now()
 
-  for (const linker of notes) {
-    if (linker.isDeleted || !linker.content) {
-      continue
+  // Новый target детерминирован по id цели: карта собирается заранее, чтобы
+  // отложенный rewrite восстанавливался из сериализуемой спеки.
+  const targetsById: Record<string, string> = {}
+  for (const noteId of affectedNoteIds) {
+    const targetItem = postNoteItemById.get(noteId)
+    if (targetItem) {
+      targetsById[String(noteId)] = pickShortestUniqueLinkTarget(
+        targetItem.name,
+        targetItem.folderPath ?? '',
+        postLookupKeyCounts,
+      )
     }
+  }
 
-    const oldLinkerFolderPath
-      = linker.folderId === null
-        ? ''
-        : (oldFolderPathMap.get(linker.folderId) ?? '')
+  const deferredOp: DeferredBacklinkRewriteOp = {
+    linkKind: 'path',
+    linkerFolderPathByNoteId: {},
+    pendingNoteIds: [],
+    preLookup,
+    targetsById,
+  }
 
-    const rewritten = rewriteInternalLinks(linker.content, (match) => {
+  const rewriteLinkerContent = (
+    content: string,
+    oldLinkerFolderPath: string,
+  ): string | null =>
+    rewriteInternalLinks(content, (match) => {
       if (match.legacyTarget) {
         return null
       }
@@ -449,15 +691,48 @@ export function rewriteBacklinksAfterFolderUpdate(
       return newTarget
     })
 
+  for (const linker of notes) {
+    if (linker.isDeleted) {
+      continue
+    }
+
+    const oldLinkerFolderPath
+      = linker.folderId === null
+        ? ''
+        : (oldFolderPathMap.get(linker.folderId) ?? '')
+
+    // Тело ещё в облаке — rewrite откладывается и применится при гидрации.
+    // content === null означает, что тело не догрузилось (файл стал
+    // placeholder после скана, флаг ещё не обновился): тоже откладываем.
+    if (linker.pendingCloudDownload || linker.content === null) {
+      addPendingLinkerToOp(deferredOp, linker.id, oldLinkerFolderPath)
+      continue
+    }
+
+    if (!linker.content) {
+      continue
+    }
+
+    const rewritten = rewriteLinkerContent(linker.content, oldLinkerFolderPath)
+
     if (rewritten === null) {
       continue
     }
 
     linker.content = rewritten
     linker.updatedAt = now
-    writeNoteToFile(paths, linker)
+
+    // Файл испарился между проверкой и записью (eviction): rewrite
+    // откладывается и применится при гидрации.
+    if (!writeNoteToFile(paths, linker, { skipIfUnavailable: true })) {
+      addPendingLinkerToOp(deferredOp, linker.id, oldLinkerFolderPath)
+      continue
+    }
+
     rewrittenCount++
   }
+
+  queueDeferredBacklinkRewriteOp(state, deferredOp)
 
   if (rewrittenCount > 0) {
     invalidateNotesSearchIndex(state)

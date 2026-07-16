@@ -5,6 +5,7 @@ import type {
   MathSettings,
   NotesEditorSettings,
   PreferencesStore,
+  TasksSettings,
 } from '../types'
 import { homedir, platform } from 'node:os'
 import Store from 'electron-store'
@@ -35,6 +36,10 @@ const HTTP_DEFAULTS: HttpSettings = {
   skipCertificateVerification: false,
 }
 
+const TASKS_DEFAULTS: TasksSettings = {
+  autoCleanupCompleted: 'never',
+}
+
 const API_INTEGRATIONS_DEFAULTS: PreferencesStore['api']['integrations'] = {
   enabled: false,
   tokenHash: null,
@@ -44,6 +49,7 @@ const API_INTEGRATIONS_DEFAULTS: PreferencesStore['api']['integrations'] = {
 const PREFERENCES_DEFAULTS: PreferencesStore = {
   appearance: {
     theme: 'auto',
+    dockBadgeSource: 'none',
   },
   updates: {
     autoUpdate: true,
@@ -69,6 +75,7 @@ const PREFERENCES_DEFAULTS: PreferencesStore = {
   },
   math: MATH_DEFAULTS,
   http: HTTP_DEFAULTS,
+  tasks: TASKS_DEFAULTS,
 }
 
 function sanitizeApiIntegrationsSettings(
@@ -170,6 +177,10 @@ function sanitizeNotesEditorSettings(value: unknown): NotesEditorSettings {
       typeof source.limitWidth === 'boolean'
         ? source.limitWidth
         : PREFERENCES_DEFAULTS.editor.notes.limitWidth,
+    wrapTables:
+      typeof source.wrapTables === 'boolean'
+        ? source.wrapTables
+        : PREFERENCES_DEFAULTS.editor.notes.wrapTables,
     lineNumbers:
       typeof source.lineNumbers === 'boolean'
         ? source.lineNumbers
@@ -238,6 +249,19 @@ function sanitizeHttpSettings(value: unknown): HttpSettings {
   }
 }
 
+function sanitizeTasksSettings(value: unknown): TasksSettings {
+  const source = asRecord(value)
+
+  return {
+    autoCleanupCompleted: readEnum(
+      source,
+      'autoCleanupCompleted',
+      ['never', '1d', '7d', '30d'] as const,
+      TASKS_DEFAULTS.autoCleanupCompleted,
+    ),
+  }
+}
+
 function sanitizePreferences(value: unknown): PreferencesStore {
   const source = asRecord(value)
   const appearanceSource = asRecord(source.appearance)
@@ -259,6 +283,7 @@ function sanitizePreferences(value: unknown): PreferencesStore {
       : asRecord(source.markdown)
   const mathSource = asRecord(source.math)
   const httpSource = asRecord(source.http)
+  const tasksSource = asRecord(source.tasks)
 
   return {
     appearance: {
@@ -266,6 +291,12 @@ function sanitizePreferences(value: unknown): PreferencesStore {
         appearanceSource,
         'theme',
         readString(source, 'theme', PREFERENCES_DEFAULTS.appearance.theme),
+      ),
+      dockBadgeSource: readEnum(
+        appearanceSource,
+        'dockBadgeSource',
+        ['none', 'codeInbox', 'notesInbox', 'tasksDue'] as const,
+        PREFERENCES_DEFAULTS.appearance.dockBadgeSource,
       ),
     },
     updates: {
@@ -320,6 +351,7 @@ function sanitizePreferences(value: unknown): PreferencesStore {
     },
     math: sanitizeMathSettings(mathSource),
     http: sanitizeHttpSettings(httpSource),
+    tasks: sanitizeTasksSettings(tasksSource),
   }
 }
 

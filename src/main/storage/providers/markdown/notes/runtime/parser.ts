@@ -6,8 +6,16 @@ import type {
 import path from 'node:path'
 import fs from 'fs-extra'
 import yaml from 'js-yaml'
+import {
+  enqueueCloudDownload,
+  prioritizeCloudDownload,
+} from '../../cloudDownloads'
 import { rememberAppFileChange } from '../../runtime/shared/appChanges'
-import { readYamlObjectFile } from '../../runtime/shared/yaml'
+import { getFileAvailability } from '../../runtime/shared/cloudFiles'
+import {
+  isYamlFileCloudUnavailable,
+  readYamlObjectFile,
+} from '../../runtime/shared/yaml'
 import { META_FILE_NAME } from './constants'
 
 export function readNotesFolderMetadata(
@@ -20,6 +28,14 @@ export function readNotesFolderMetadata(
   const metaData = readYamlObjectFile<NotesFolderMetadataFile>(metaPath)
   if (metaData) {
     return metaData
+  }
+
+  // Недокачанный .meta.yaml — не «метаданных нет»: id папки существует, но
+  // сейчас неизвестен. Сам файл (крошечный и критичный для стабильности id)
+  // поднимается в начало очереди докачки.
+  if (isYamlFileCloudUnavailable(metaPath)) {
+    prioritizeCloudDownload(metaPath)
+    return { unavailable: true }
   }
 
   return {}
@@ -56,8 +72,16 @@ export function writeNotesFolderMetadataFile(
     .trim()
 
   const nextContent = `${body}\n`
+  const availability = getFileAvailability(metaPath)
 
-  if (fs.pathExistsSync(metaPath)) {
+  // Запись в недокачанный .meta.yaml затёрла бы облачные метаданные папки
+  // (включая её id): файл сначала докачивается в фоне.
+  if (availability.isCloudPlaceholder) {
+    enqueueCloudDownload(metaPath)
+    return
+  }
+
+  if (availability.exists) {
     const currentContent = fs.readFileSync(metaPath, 'utf8')
     if (currentContent === nextContent) {
       return

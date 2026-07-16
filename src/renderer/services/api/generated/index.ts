@@ -63,6 +63,7 @@ export interface SnippetItemResponse {
   isDeleted: number;
   createdAt: number;
   updatedAt: number;
+  pendingCloudDownload?: boolean;
   contents: {
     id: number;
     label: string;
@@ -141,6 +142,7 @@ export type SnippetsResponse = {
   isDeleted: number;
   createdAt: number;
   updatedAt: number;
+  pendingCloudDownload?: boolean;
   contents: {
     id: number;
     label: string;
@@ -264,6 +266,7 @@ export interface VaultDoctorResponse {
     space: "code" | "notes" | "http" | "math";
     status: "applied" | "blocked" | "needs-decision" | "pending" | "skipped";
   }[];
+  notReady?: boolean;
   summary: {
     affectedFiles: number;
     blocked: number;
@@ -367,6 +370,10 @@ export interface NotesCountsResponse {
   trash: number;
 }
 
+export interface NotesTasksCleanupResponse {
+  count: number;
+}
+
 export interface NoteItemResponse {
   id: number;
   name: string;
@@ -384,6 +391,7 @@ export interface NoteItemResponse {
   isDeleted: number;
   createdAt: number;
   updatedAt: number;
+  pendingCloudDownload?: boolean;
   content: string;
 }
 
@@ -406,6 +414,7 @@ export type NotesResponse = {
   isDeleted: number;
   createdAt: number;
   updatedAt: number;
+  pendingCloudDownload?: boolean;
 }[];
 
 export interface NotesQuery {
@@ -438,6 +447,11 @@ export interface NotesQuery {
   propertyStatus?: string;
   propertyStatusNot?: string;
   propertyType?: string;
+  /**
+   * @min 0
+   * @max 1
+   */
+  hideCompletedTasks?: number;
 }
 
 export interface NotePropertiesUpdate {
@@ -623,6 +637,7 @@ export interface HttpRequestItemResponse {
   filePath: string;
   isFavorites: number;
   isDeleted: number;
+  pendingCloudDownload?: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -680,7 +695,6 @@ export type HttpRequestsResponse = {
     enabled?: boolean;
   }[];
   bodyType: "none" | "json" | "text" | "form-urlencoded" | "multipart";
-  body: string | null;
   formData: {
     key: string;
     type: "text" | "file";
@@ -696,6 +710,7 @@ export type HttpRequestsResponse = {
   filePath: string;
   isFavorites: number;
   isDeleted: number;
+  pendingCloudDownload?: boolean;
   createdAt: number;
   updatedAt: number;
 }[];
@@ -1173,7 +1188,7 @@ export class HttpClient<SecurityDataType = unknown> {
 
 /**
  * @title massCode API
- * @version 5.6.1
+ * @version 5.8.0
  *
  * Development documentation
  */
@@ -1727,6 +1742,11 @@ export class Api<
         propertyStatus?: string;
         propertyStatusNot?: string;
         propertyType?: string;
+        /**
+         * @min 0
+         * @max 1
+         */
+        hideCompletedTasks?: number;
       },
       params: RequestParams = {},
     ) =>
@@ -1916,6 +1936,21 @@ export class Api<
       this.request<void, any>({
         path: `/notes/trash`,
         method: "DELETE",
+        ...params,
+      }),
+
+    /**
+     * No description
+     *
+     * @tags Notes
+     * @name PostNotesTasksCleanup
+     * @request POST:/notes/tasks/cleanup
+     */
+    postNotesTasksCleanup: (params: RequestParams = {}) =>
+      this.request<NotesTasksCleanupResponse, any>({
+        path: `/notes/tasks/cleanup`,
+        method: "POST",
+        format: "json",
         ...params,
       }),
   };

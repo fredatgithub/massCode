@@ -10,6 +10,10 @@ import {
   useTheme,
 } from '@/composables'
 import { i18n, ipc } from '@/electron'
+import {
+  mapNormalizedCursorIndex,
+  normalizeTerminalText,
+} from '@/utils/normalizeTerminalText'
 import { useClipboard, useCssVar, useDebounceFn } from '@vueuse/core'
 import CodeMirror from 'codemirror'
 import 'codemirror/addon/edit/closebrackets'
@@ -348,6 +352,17 @@ function setLanguage(language: Language) {
   editor?.setOption('mode', language)
 }
 
+function focusEditor() {
+  isShowCodeImage.value = false
+  isShowJsonVisualizer.value = false
+
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      editor?.focus()
+    })
+  })
+}
+
 async function format() {
   const availableLang: Language[] = [
     'css',
@@ -417,7 +432,35 @@ function onCopySnippetMenu() {
   useDonations().incrementCopy('code')
 }
 
+function normalizeTerminalOutput() {
+  if (!editor)
+    return
+
+  if (editor.somethingSelected()) {
+    const selections = editor.getSelections()
+    const normalized = selections.map(normalizeTerminalText)
+
+    if (normalized.some((value, index) => value !== selections[index]))
+      editor.replaceSelections(normalized, 'around')
+
+    return
+  }
+
+  const value = editor.getValue()
+  const normalized = normalizeTerminalText(value)
+
+  if (normalized === value)
+    return
+
+  const cursorIndex = editor.indexFromPos(editor.getCursor())
+  const mappedIndex = mapNormalizedCursorIndex(value, cursorIndex, normalized)
+
+  setValue(normalized, false)
+  editor.setCursor(editor.posFromIndex(mappedIndex))
+}
+
 ipc.on('main-menu:format', format)
+ipc.on('main-menu:normalize-code-line-breaks', normalizeTerminalOutput)
 
 // Спейсы пересоздаются при переключении: без снятия listeners каждый цикл
 // добавляет обработчик и удерживает мёртвый инстанс CodeMirror от GC.
@@ -426,6 +469,7 @@ ipc.on('main-menu:format', format)
 // этот компонент.
 onBeforeUnmount(() => {
   ipc.removeListeners('main-menu:format')
+  ipc.removeListeners('main-menu:normalize-code-line-breaks')
   ipc.removeListeners('main-menu:copy-snippet')
 })
 
@@ -495,9 +539,16 @@ onMounted(() => {
 <template>
   <div
     data-editor
-    class="grid h-full grid-rows-[auto_1fr_auto] overflow-hidden pt-[var(--content-top-offset)]"
+    class="relative grid h-full grid-rows-[auto_1fr_auto] overflow-hidden pt-[var(--content-top-offset)]"
   >
-    <EditorHeader v-if="isShowHeader" />
+    <UiLoadingOverlay
+      v-if="selectedSnippet?.pendingCloudDownload"
+      :label="i18n.t('cloudDownloads.itemPending')"
+    />
+    <EditorHeader
+      v-if="isShowHeader"
+      @focus-editor="focusEditor"
+    />
     <div
       v-show="isShowEditor"
       class="flex min-h-0 flex-1 flex-col overflow-auto"

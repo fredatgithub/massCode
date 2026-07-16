@@ -11,6 +11,8 @@ type MainMenuAction =
   | 'font-size-increase'
   | 'font-size-reset'
   | 'format'
+  | 'normalize-code-line-breaks'
+  | 'normalize-note-line-breaks'
   | 'goto-preferences'
   | 'goto-devtools'
   | 'new-note'
@@ -34,6 +36,7 @@ type MainMenuAction =
   | 'send-http-request'
   | 'toggle-sidebar'
   | 'toggle-compact-mode'
+  | 'toggle-hide-completed-tasks'
   | 'update-context'
   | 'goto-math-notebook'
 
@@ -49,7 +52,9 @@ type SystemAction =
   | 'get-directory-state'
   | 'reload'
   | 'move-vault'
+  | 'set-vault-path'
   | 'open-external'
+  | 'refresh-dock-badge'
   | 'show-http-request-in-file-manager'
   | 'show-notes-folder-in-file-manager'
   | 'show-note-in-file-manager'
@@ -60,11 +65,19 @@ type SystemAction =
   | 'update-downloaded'
   | 'renderer-ready'
   | 'storage-synced'
+  | 'cloud-download-status'
+  | 'cloud-download-progress'
   | 'migration-complete'
   | 'migration-error'
+  | 'notes-asset-ready'
   | 'error'
 type PrettierAction = 'format'
-type FsAction = 'assets' | 'import-markdown-folder' | 'notes-asset'
+type FsAction =
+  | 'assets'
+  | 'folder-icon:set'
+  | 'folder-icon:write'
+  | 'import-markdown-folder'
+  | 'notes-asset'
 type ThemeAction = 'list' | 'get' | 'open-dir' | 'create-template' | 'changed'
 type SpacesAction =
   | 'math:read'
@@ -107,6 +120,21 @@ export interface PrettierOptions {
 
 export interface FsAssetsOptions {
   path: string
+}
+
+export type FolderIconSpaceId = 'code' | 'notes' | 'http'
+
+export interface FolderIconTarget {
+  folderId: number
+  spaceId: FolderIconSpaceId
+}
+
+export interface FolderIconWritePayload extends FolderIconTarget {
+  buffer: ArrayBuffer
+}
+
+export interface FolderIconSetPayload extends FolderIconTarget {
+  icon: string | null
 }
 
 export interface ImportMarkdownFolderFile {

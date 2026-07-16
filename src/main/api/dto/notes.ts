@@ -47,6 +47,8 @@ const noteItemBase = {
   isDeleted: t.Number(),
   createdAt: t.Number(),
   updatedAt: t.Number(),
+  // Файл заметки — облачный плейсхолдер, содержимое докачивается в фоне.
+  pendingCloudDownload: t.Optional(t.Boolean()),
 }
 
 const noteItem = t.Object({
@@ -65,10 +67,15 @@ const notesCountsResponse = t.Object({
   trash: t.Number(),
 })
 
+const notesTasksCleanupResponse = t.Object({
+  count: t.Number(),
+})
+
 export const notesDTO = new Elysia().model({
   notesAdd,
   notesContentUpdate,
   notesCountsResponse,
+  notesTasksCleanupResponse,
   noteItemResponse: noteItem,
   noteProperties,
   notesResponse,
@@ -86,6 +93,7 @@ export const notesDTO = new Elysia().model({
     propertyStatus: t.Optional(t.String()),
     propertyStatusNot: t.Optional(t.String()),
     propertyType: t.Optional(t.String()),
+    hideCompletedTasks: t.Optional(t.Number({ minimum: 0, maximum: 1 })),
   }),
   notePropertiesUpdate,
   notesUpdate,

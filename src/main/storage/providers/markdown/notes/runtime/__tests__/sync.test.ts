@@ -3,8 +3,10 @@ import os from 'node:os'
 import path from 'node:path'
 import fs from 'fs-extra'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { waitForNotesAssetsMigrationForTests } from '../assetsMigration'
 import { createDefaultNotesState, saveNotesState } from '../state'
 import {
+  resetNotesRuntimeCache,
   syncNoteFileWithDisk,
   syncNotesFoldersWithDisk,
   syncNotesRuntimeWithDisk,
@@ -70,7 +72,9 @@ function createNotesPaths(): NotesPaths {
   const metaDirPath = path.join(notesRoot, '.masscode')
 
   return {
+    assetsPath: path.join(metaDirPath, 'assets'),
     inboxDirPath: path.join(metaDirPath, 'inbox'),
+    legacyAssetsPath: path.join(notesRoot, 'assets'),
     metaDirPath,
     notesRoot,
     statePath: path.join(metaDirPath, 'state.json'),
@@ -79,6 +83,7 @@ function createNotesPaths(): NotesPaths {
 }
 
 afterEach(() => {
+  resetNotesRuntimeCache()
   for (const dirPath of tempDirs.splice(0)) {
     fs.removeSync(dirPath)
   }
@@ -338,5 +343,91 @@ describe('syncNotesRuntimeWithDisk', () => {
 
     expect(cache.state.tags).toHaveLength(1)
     expect(cache.state.tags[0].name).toBe('pending-tag')
+  })
+
+  it('schedules referenced asset migration after a full sync', async () => {
+    const paths = createNotesPaths()
+    const fileName = 'abcdefghijklmnop.png'
+    fs.ensureDirSync(paths.legacyAssetsPath)
+    fs.writeFileSync(path.join(paths.legacyAssetsPath, fileName), 'asset')
+    fs.writeFileSync(
+      path.join(paths.notesRoot, 'Note.md'),
+      `---\nid: 1\nname: Note\n---\n![asset](masscode://notes-asset/${fileName})\n`,
+      'utf8',
+    )
+
+    syncNotesRuntimeWithDisk(paths)
+    await waitForNotesAssetsMigrationForTests()
+
+    expect(fs.pathExistsSync(path.join(paths.assetsPath, fileName))).toBe(true)
+    expect(fs.pathExistsSync(path.join(paths.legacyAssetsPath, fileName))).toBe(
+      false,
+    )
+  })
+
+  it('discovers a late reference after successful incremental note sync', async () => {
+    const paths = createNotesPaths()
+    const fileName = 'abcdefghijklmnop.png'
+    fs.ensureDirSync(paths.legacyAssetsPath)
+    fs.writeFileSync(path.join(paths.legacyAssetsPath, fileName), 'asset')
+
+    syncNotesRuntimeWithDisk(paths)
+    await waitForNotesAssetsMigrationForTests()
+
+    fs.writeFileSync(
+      path.join(paths.notesRoot, 'Late.md'),
+      `---\nid: 2\nname: Late\n---\n![asset](masscode://notes-asset/${fileName})\n`,
+      'utf8',
+    )
+    expect(syncNoteFileWithDisk(paths, 'Late.md')).not.toBeNull()
+    await waitForNotesAssetsMigrationForTests()
+
+    expect(fs.pathExistsSync(path.join(paths.assetsPath, fileName))).toBe(true)
+    expect(fs.pathExistsSync(path.join(paths.legacyAssetsPath, fileName))).toBe(
+      false,
+    )
+  })
+})
+
+describe('provisional notes state during cloud hydration', () => {
+  afterEach(() => {
+    resetNotesRuntimeCache()
+  })
+
+  it('never persists provisional state over the real index', () => {
+    const paths = createNotesPaths()
+    fs.writeFileSync(
+      path.join(paths.notesRoot, 'Known.md'),
+      '---\nid: 1\nname: Known\n---\nbody\n',
+      'utf8',
+    )
+    const cache = syncNotesRuntimeWithDisk(paths)
+    const persistedContent = fs.readFileSync(paths.statePath, 'utf8')
+
+    // Состояние помечено как provisional (state.json «ещё не докачан»):
+    // даже изменённый индекс не должен доехать до диска.
+    cache.state.provisional = true
+    cache.state.notes.push({ filePath: 'phantom.md', id: 99 })
+    saveNotesState(paths, cache.state, { immediate: true })
+
+    expect(fs.readFileSync(paths.statePath, 'utf8')).toBe(persistedContent)
+  })
+
+  it('skips watcher registration of notes while state is provisional', () => {
+    const paths = createNotesPaths()
+    const cache = syncNotesRuntimeWithDisk(paths)
+    cache.state.provisional = true
+
+    fs.writeFileSync(
+      path.join(paths.notesRoot, 'Fresh.md'),
+      '---\nid: 5\nname: Fresh\n---\nbody\n',
+      'utf8',
+    )
+    const result = syncNoteFileWithDisk(paths, 'Fresh.md')
+
+    // Событие не эскалирует в полный ресинк и не регистрирует файл:
+    // его подберёт сверка после докачки state.
+    expect(result).toBe(cache)
+    expect(cache.state.notes).toHaveLength(0)
   })
 })

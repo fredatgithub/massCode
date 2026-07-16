@@ -12,6 +12,17 @@ import {
   writeFileSync,
 } from 'fs-extra'
 import slash from 'slash'
+import {
+  parseFolderIconSetPayload,
+  parseFolderIconWritePayload,
+  setFolderIcon,
+  writeFolderIcon,
+} from '../../folderIcons'
+import {
+  getNotesPaths,
+  parseNotesAssetWritePayload,
+  writeNotesAsset,
+} from '../../storage/providers/markdown/notes/runtime'
 import { ensureFlatSpacesLayout } from '../../storage/providers/markdown/runtime/spaces'
 import { store } from '../../store'
 
@@ -96,6 +107,22 @@ async function readMarkdownFolder(
 }
 
 export function registerFsHandlers() {
+  ipcMain.handle('fs:folder-icon:write', async (_, payload: unknown) => {
+    const parsedPayload = parseFolderIconWritePayload(payload)
+    if (!parsedPayload)
+      throw new TypeError('Invalid folder icon payload')
+
+    return writeFolderIcon(parsedPayload)
+  })
+
+  ipcMain.handle('fs:folder-icon:set', async (_, payload: unknown) => {
+    const parsedPayload = parseFolderIconSetPayload(payload)
+    if (!parsedPayload)
+      throw new TypeError('Invalid folder icon payload')
+
+    await setFolderIcon(parsedPayload)
+  })
+
   ipcMain.handle('fs:assets', (event, { buffer, fileName }) => {
     const storagePath = store.preferences.get('storage.rootPath') as string
 
@@ -118,7 +145,12 @@ export function registerFsHandlers() {
     })
   })
 
-  ipcMain.handle('fs:notes-asset', (event, { buffer, ext }) => {
+  ipcMain.handle('fs:notes-asset', async (event, payload: unknown) => {
+    const parsedPayload = parseNotesAssetWritePayload(payload)
+    if (!parsedPayload) {
+      throw new TypeError('Invalid Notes asset payload')
+    }
+
     const vaultPath
       = (store.preferences.get('storage.vaultPath') as string | null)
         || join(
@@ -126,22 +158,12 @@ export function registerFsHandlers() {
           'markdown-vault',
         )
 
-    return new Promise((resolve, reject) => {
-      try {
-        ensureFlatSpacesLayout(vaultPath)
-        const assetsPath = join(vaultPath, 'notes', 'assets')
-        const name = `${generateAssetId()}${ext}`
-        const dest = join(assetsPath, name)
-
-        ensureDirSync(assetsPath)
-        writeFileSync(dest, Buffer.from(buffer))
-
-        resolve(`masscode://notes-asset/${name}`)
-      }
-      catch (error) {
-        reject(error)
-      }
-    })
+    ensureFlatSpacesLayout(vaultPath)
+    return writeNotesAsset(
+      getNotesPaths(vaultPath),
+      parsedPayload.buffer,
+      parsedPayload.ext,
+    )
   })
 
   ipcMain.handle('fs:import-markdown-folder', async () => {

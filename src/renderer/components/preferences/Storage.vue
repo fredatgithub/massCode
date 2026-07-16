@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/shadcn/badge'
 import { Button } from '@/components/ui/shadcn/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/shadcn/radio-group'
 import {
+  resetCodeSpaceInitialization,
   resetHttpSpaceState,
   resetNotesSpaceInitialization,
   useDialog,
@@ -28,13 +29,17 @@ import { i18n, ipc, store } from '@/electron'
 import { AlertTriangle, Check, LoaderCircle } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '~/renderer/services/api'
+import {
+  formatVaultDoctorWarning,
+  getVaultDoctorWarningKey,
+} from './vaultDoctorWarnings'
 
 interface DirectoryStateResponse {
   exists: boolean
   isEmpty: boolean
 }
 
-interface MoveVaultResponse {
+interface VaultPathResponse {
   vaultPath: string
 }
 
@@ -117,6 +122,15 @@ const {
   reset: resetVaultDoctor,
 } = useVaultDoctor()
 
+const formattedVaultDoctorWarnings = computed(() =>
+  vaultDoctorWarningPreview.value.map(warning => ({
+    ...formatVaultDoctorWarning(warning, (key, options) =>
+      i18n.t(key, options)),
+    key: getVaultDoctorWarningKey(warning),
+    warning,
+  })),
+)
+
 function showLoadingCounts() {
   loadingCountsTimer = setTimeout(() => {
     isLoadingCounts.value = true
@@ -185,6 +199,7 @@ async function getSnippetsCounts() {
 getSnippetsCounts()
 
 async function resetAndReloadVaultData() {
+  resetCodeSpaceInitialization()
   resetMathNotebook()
   resetDrawings()
   clearNotesState()
@@ -207,32 +222,56 @@ async function resetAndReloadVaultData() {
   await getSnippetsCounts()
 }
 
+async function syncVaultPathAfterFailedChange() {
+  // Main process мог сохранить новый путь до ошибки следующего шага
+  // (например, запуска watcher после физического переноса). UI должен
+  // отражать фактически активный vault, а не уже несуществующий старый.
+  const configuredVaultPath = store.preferences.get<string | null>(
+    'storage.vaultPath',
+  )
+  if (configuredVaultPath !== vaultPath.value) {
+    vaultPath.value = configuredVaultPath
+    await resetAndReloadVaultData()
+  }
+}
+
 async function openVaultStorage() {
   if (isMovingVault.value) {
     return
   }
 
-  const result = await ipc.invoke<DialogOptions, string>(
+  const selectedPath = await ipc.invoke<DialogOptions, string>(
     'main-menu:open-dialog',
     {
       properties: ['openDirectory', 'createDirectory'],
     },
   )
 
-  if (!result) {
+  if (!selectedPath) {
     return
   }
 
-  vaultPath.value = result
-  store.preferences.set('storage.vaultPath', result)
-  await resetAndReloadVaultData()
+  try {
+    const result = await ipc.invoke<{ vaultPath: string }, VaultPathResponse>(
+      'system:set-vault-path',
+      { vaultPath: selectedPath },
+    )
 
-  sonner({
-    message: i18n.t('messages:success.vaultLoaded'),
-    type: 'success',
-  })
+    vaultPath.value = result.vaultPath
+    await resetAndReloadVaultData()
 
-  await refreshVaultDoctorAfterVaultChange()
+    sonner({
+      message: i18n.t('messages:success.vaultLoaded'),
+      type: 'success',
+    })
+
+    await refreshVaultDoctorAfterVaultChange()
+  }
+  catch (err) {
+    await syncVaultPathAfterFailedChange()
+    const error = err as Error
+    sonner({ message: error.message, type: 'error' })
+  }
 }
 
 async function moveVaultStorage() {
@@ -272,7 +311,7 @@ async function moveVaultStorage() {
   isMovingVault.value = true
 
   try {
-    const result = await ipc.invoke<{ targetPath: string }, MoveVaultResponse>(
+    const result = await ipc.invoke<{ targetPath: string }, VaultPathResponse>(
       'system:move-vault',
       { targetPath },
     )
@@ -290,6 +329,7 @@ async function moveVaultStorage() {
     })
   }
   catch (err) {
+    await syncVaultPathAfterFailedChange()
     const error = err as Error
     sonner({ message: error.message, type: 'error' })
   }
@@ -354,6 +394,16 @@ async function scanVaultDoctor() {
 
   try {
     const data = await scanVault()
+
+    // Vault ещё сверяется с диском: аудит не выполнялся, «чистый» тост был
+    // бы ложным.
+    if (data?.notReady) {
+      sonner({
+        message: i18n.t('messages:warning.vaultDoctorNotReady'),
+        type: 'warning',
+      })
+      return
+    }
 
     if (
       data
@@ -886,14 +936,31 @@ onMounted(() => {
                 <UiText variant="sm">
                   {{ i18n.t("preferences:storage.vaultDoctor.warnings") }}
                 </UiText>
-                <UiText
-                  v-for="warning in vaultDoctorWarningPreview"
-                  :key="`${warning.space}:${warning.path}:${warning.code}`"
-                  variant="caption"
-                  class="block font-mono break-all"
+                <div
+                  v-for="item in formattedVaultDoctorWarnings"
+                  :key="item.key"
+                  class="space-y-0.5"
                 >
-                  {{ warning.code }} · {{ warning.path }}
-                </UiText>
+                  <UiText
+                    variant="caption"
+                    class="block"
+                  >
+                    {{ item.message }}
+                  </UiText>
+                  <UiText
+                    variant="caption"
+                    class="text-muted-foreground block font-mono break-all"
+                  >
+                    {{ item.warning.path }}
+                  </UiText>
+                  <UiText
+                    v-if="item.recommendation"
+                    variant="caption"
+                    class="text-muted-foreground block"
+                  >
+                    {{ item.recommendation }}
+                  </UiText>
+                </div>
                 <UiText
                   v-if="vaultDoctorHiddenWarningCount > 0"
                   variant="caption"

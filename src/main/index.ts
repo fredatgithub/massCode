@@ -1,22 +1,41 @@
 /* eslint-disable node/prefer-global/process */
-import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { app, BrowserWindow, ipcMain, Menu, protocol, screen } from 'electron'
 import { initApi } from './api'
+import { cleanupDockBadge, refreshDockBadge } from './dockBadge'
+import { resolveFolderIconResponse } from './folderIcons'
 import { registerIPC } from './ipc'
 import { startThemeWatcher, stopThemeWatcher } from './ipc/handlers/theme'
 import { validateStoredLicense } from './license'
 import { createMainMenu } from './menu/main'
 import { isQuitting, setQuitting } from './quitState'
-import { startMarkdownWatcher, stopMarkdownWatcher } from './storage'
+import {
+  prepareMarkdownWatcher,
+  startMarkdownWatcher,
+  stopMarkdownWatcher,
+} from './storage'
+import {
+  getNotesPaths,
+  resolveNotesAsset,
+} from './storage/providers/markdown/notes/runtime'
+import { getVaultPath } from './storage/providers/markdown/runtime/paths'
 import { ensureFlatSpacesLayout } from './storage/providers/markdown/runtime/spaces'
 import { store } from './store'
+import { startTasksCleanupScheduler, stopTasksCleanupScheduler } from './tasks'
 import { checkForUpdates } from './updates'
 import { isSqliteFile, log } from './utils'
 import { DEFAULT_WINDOW_BOUNDS, normalizeWindowBounds } from './windowBounds'
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
+
+// Отладка renderer через Chrome DevTools Protocol (только по явному env).
+if (process.env.MASSCODE_REMOTE_DEBUG_PORT) {
+  app.commandLine.appendSwitch(
+    'remote-debugging-port',
+    process.env.MASSCODE_REMOTE_DEBUG_PORT,
+  )
+}
 
 const isDev = process.env.NODE_ENV === 'development'
 const gotTheLock = app.requestSingleInstanceLock()
@@ -136,37 +155,14 @@ else {
       const url = new URL(request.url)
 
       if (url.hostname === 'notes-asset') {
-        const fileName = url.pathname.replace(/^\//, '')
-        const vaultPath
-          = (store.preferences.get('storage.vaultPath') as string | null)
-            || path.join(
-              store.preferences.get('storage.rootPath') as string,
-              'markdown-vault',
-            )
-        ensureFlatSpacesLayout(vaultPath)
-        const filePath = path.join(vaultPath, 'notes', 'assets', fileName)
+        const paths = getNotesPaths(getVaultPath())
+        return resolveNotesAsset(url.pathname.replace(/^\//, ''), paths)
+      }
 
-        try {
-          const data = await readFile(filePath)
-          const ext = path.extname(fileName).toLowerCase()
-          const mimeTypes: Record<string, string> = {
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.gif': 'image/gif',
-            '.webp': 'image/webp',
-            '.svg': 'image/svg+xml',
-            '.bmp': 'image/bmp',
-          }
-          return new Response(data, {
-            headers: {
-              'Content-Type': mimeTypes[ext] || 'application/octet-stream',
-            },
-          })
-        }
-        catch {
-          return new Response('Not found', { status: 404 })
-        }
+      if (url.hostname === 'folder-icon') {
+        const [, spaceId, folderId, ...rest] = url.pathname.split('/')
+        if (rest.length === 0)
+          return resolveFolderIconResponse(spaceId, folderId)
       }
 
       return new Response('Not found', { status: 404 })
@@ -228,10 +224,10 @@ else {
     }
 
     try {
-      startMarkdownWatcher()
+      startTasksCleanupScheduler()
     }
     catch (error) {
-      log('Error starting markdown watcher', error)
+      log('Error starting tasks cleanup scheduler', error)
     }
 
     try {
@@ -239,6 +235,13 @@ else {
     }
     catch (error) {
       log('Error registering IPC', error)
+    }
+
+    try {
+      prepareMarkdownWatcher()
+    }
+    catch (error) {
+      log('Error preparing markdown watcher', error)
     }
 
     try {
@@ -254,6 +257,20 @@ else {
     catch (error) {
       log('Error creating window', error)
     }
+
+    // Первичный скан vault уходит из критического пути старта: окно
+    // появляется сразу, а скан (уже без блокирующих чтений облачных
+    // плейсхолдеров) выполняется следом. Ранние API/IPC-запросы renderer
+    // безопасны: они лениво триггерят тот же скан через getRuntimeCache.
+    setImmediate(() => {
+      try {
+        startMarkdownWatcher()
+        refreshDockBadge()
+      }
+      catch (error) {
+        log('Error starting markdown watcher', error)
+      }
+    })
 
     try {
       startThemeWatcher()
@@ -286,6 +303,8 @@ else {
     flushWindowBoundsSave()
     stopThemeWatcher()
     stopMarkdownWatcher()
+    stopTasksCleanupScheduler()
+    cleanupDockBadge()
   })
 
   app.on('window-all-closed', () => {

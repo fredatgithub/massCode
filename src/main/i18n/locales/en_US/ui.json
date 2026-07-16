@@ -193,7 +193,8 @@
       "searchPlaceholder": "Search sheets…",
       "noResults": "No sheets found",
       "untitled": "Untitled",
-      "currencyUnavailable": "Currency rates service unavailable"
+      "currencyUnavailable": "Currency rates service unavailable",
+      "cloudSyncing": "Syncing from cloud storage…"
     },
     "drawings": {
       "label": "Drawings",
@@ -357,6 +358,52 @@
     "symbols": "Symbols",
     "selectedMultiple": "{{count}} Notes Selected",
     "noSelected": "No Note Selected",
+    "editor": {
+      "menu": {
+        "format": {
+          "title": "Format",
+          "bold": "Bold",
+          "italic": "Italic",
+          "strikethrough": "Strikethrough",
+          "highlight": "Highlight",
+          "code": "Code",
+          "link": "Link",
+          "clearFormatting": "Clear formatting"
+        },
+        "paragraph": {
+          "title": "Paragraph",
+          "bulletList": "Bullet list",
+          "numberedList": "Numbered list",
+          "taskList": "Task list",
+          "heading": "Heading {{level}}",
+          "body": "Body",
+          "quote": "Quote"
+        },
+        "insert": {
+          "title": "Insert",
+          "table": "Table",
+          "callout": "Callout",
+          "horizontalRule": "Horizontal rule",
+          "codeBlock": "Code block"
+        },
+        "table": {
+          "title": "Table",
+          "insertRowAbove": "Insert row above",
+          "insertRowBelow": "Insert row below",
+          "deleteRow": "Delete row",
+          "insertColumnLeft": "Insert column left",
+          "insertColumnRight": "Insert column right",
+          "deleteColumn": "Delete column",
+          "alignLeft": "Align left",
+          "alignCenter": "Align center",
+          "alignRight": "Align right"
+        }
+      },
+      "table": {
+        "addColumn": "Add column to the right",
+        "addRow": "Add row below"
+      }
+    },
     "tasks": {
       "title": "Tasks",
       "today": "Today",
@@ -367,6 +414,12 @@
       "duePlaceholder": "Due",
       "clearDue": "Clear due date",
       "noDue": "No due",
+      "cleanupCompleted": "Clean up completed tasks",
+      "cleanupConfirmTitle": "Clean up completed tasks?",
+      "cleanupConfirmMessage": "All completed tasks will be moved to trash. You can restore them until you empty the trash.",
+      "cleanupDone": "Moved {{count}} completed task(s) to trash",
+      "cleanupEmpty": "No completed tasks to clean up",
+      "cleanupError": "Failed to clean up completed tasks",
       "status": {
         "todo": "Todo",
         "inProgress": "In progress",
@@ -445,7 +498,37 @@
     "untitled": "Untitled folder",
     "iconPicker": {
       "searchPlaceholder": "Search icons...",
+      "emojiSearchPlaceholder": "Search emoji...",
+      "iconSearchPlaceholder": "Search icons...",
       "emptyResults": "No icons found",
+      "emptyEmojiResults": "No emoji found",
+      "uploadImage": "Upload JPG or PNG",
+      "replaceImage": "Choose another",
+      "applyImage": "Use image",
+      "uploading": "Processing image...",
+      "uploadTitle": "Add a custom image",
+      "uploadHint": "Drop a JPG or PNG here, or choose a file. Maximum size: 10 MB.",
+      "tabs": {
+        "emoji": "Emoji",
+        "icons": "Icons",
+        "upload": "Upload"
+      },
+      "emojiCategories": {
+        "people": "People",
+        "nature": "Nature",
+        "food": "Food & Drink",
+        "activities": "Activities",
+        "travel": "Travel & Places",
+        "objects": "Objects",
+        "symbols": "Symbols",
+        "flags": "Flags"
+      },
+      "errors": {
+        "unsupportedFormat": "Choose a JPG or PNG image.",
+        "fileTooLarge": "The image must be 10 MB or smaller.",
+        "processingFailed": "The image could not be processed.",
+        "updateFailed": "The folder icon could not be updated."
+      },
       "filters": {
         "all": "All",
         "material": "Material",
@@ -579,5 +662,11 @@
     "searchIn": "Search in {{- context}}",
     "addTag": "Add Tag",
     "selectLanguage": "Select Language"
+  },
+  "cloudDownloads": {
+    "downloading": "Downloading files from cloud storage: {{count}} left",
+    "failed": "Failed to download files from cloud storage: {{count}}",
+    "itemPending": "Downloading from cloud storage…",
+    "label": "Cloud downloads"
   }
 }

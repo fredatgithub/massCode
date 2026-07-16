@@ -92,6 +92,8 @@ export interface SnippetRecord {
   isDeleted: number
   createdAt: number
   updatedAt: number
+  /** Содержимое файла ещё не скачано облачным провайдером. */
+  pendingCloudDownload?: boolean
 }
 
 export interface SnippetsQueryInput {
@@ -217,6 +219,8 @@ export interface NoteRecord {
   isDeleted: number
   createdAt: number
   updatedAt: number
+  /** Содержимое файла ещё не скачано облачным провайдером. */
+  pendingCloudDownload?: boolean
 }
 
 export interface NoteTagRecord {
@@ -243,6 +247,11 @@ export interface NotesQueryInput {
   propertyStatus?: string
   propertyStatusNot?: string
   propertyType?: string
+  hideCompletedTasks?: number
+  // Server-only флаг (не HTTP-параметр): дочитать тела заметок перед
+  // построением records — для потоков, которым нужен content (graph,
+  // dashboard). Список работает без тел.
+  withContent?: boolean
 }
 
 export interface NoteCreateInput {

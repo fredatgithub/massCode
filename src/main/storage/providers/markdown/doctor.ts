@@ -5,17 +5,21 @@ import type {
   VaultDoctorWarning,
 } from '../../../api/dto/vault-doctor'
 import type { MathNotebookStore, MathSheet } from '../../../store/types'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import fs from 'fs-extra'
 import yaml from 'js-yaml'
+import { enqueueCloudDownload } from './cloudDownloads'
 import {
   getHttpPaths,
+  isHttpVaultDiskReady,
   loadHttpState,
   syncHttpRuntimeWithDisk,
 } from './http/runtime'
 import {
+  extractNotesAssetNames,
   getNotesPaths,
+  isNotesVaultDiskReady,
   loadNotesState,
   syncNotesRuntimeWithDisk,
 } from './notes/runtime'
@@ -24,6 +28,7 @@ import {
   getSpaceStatePath,
   getVaultPath,
   INBOX_DIR_NAME,
+  isCodeVaultDiskReady,
   loadState,
   META_DIR_NAME,
   META_FILE_NAME,
@@ -32,6 +37,12 @@ import {
   TRASH_DIR_NAME,
   writeSpaceStateImmediate,
 } from './runtime'
+import {
+  getFileAvailability,
+  primeDatalessChecks,
+} from './runtime/shared/cloudFiles'
+import { isCloudFileNotDownloadedError } from './runtime/shared/guardedRead'
+import { readDirEntriesFailClosed } from './runtime/shared/path'
 
 type VaultDoctorSpace = NonNullable<VaultDoctorInput['spaces']>[number]
 
@@ -50,9 +61,18 @@ interface ScanContext {
 interface EntityScanRecord {
   filePath: string
   fingerprint: Fingerprint
+  // folderId из frontmatter: у заметок он приоритетнее пути и может
+  // указывать на несуществующую папку (dangling).
+  folderId: number | null
   id: number
   kind: 'note' | 'snippet'
   space: Extract<VaultDoctorSpace, 'code' | 'http' | 'notes'>
+}
+
+interface InspectedNotesAssetPath {
+  exists: boolean
+  invalidReason: string | null
+  isCloudPlaceholder: boolean
 }
 
 const DEFAULT_SPACES: VaultDoctorSpace[] = ['code', 'notes', 'http', 'math']
@@ -119,6 +139,168 @@ function addWarning(context: ScanContext, warning: VaultDoctorWarning): void {
   context.warnings.push(warning)
 }
 
+function hashLocalFile(absolutePath: string): string {
+  return createHash('sha256')
+    .update(fs.readFileSync(absolutePath))
+    .digest('hex')
+}
+
+function inspectNotesAssetPath(
+  absolutePath: string,
+  location: 'destination' | 'source',
+): InspectedNotesAssetPath {
+  try {
+    const stats = fs.lstatSync(absolutePath)
+    if (stats.isSymbolicLink()) {
+      return {
+        exists: true,
+        invalidReason: `${location}-symlink`,
+        isCloudPlaceholder: false,
+      }
+    }
+    if (!stats.isFile()) {
+      return {
+        exists: true,
+        invalidReason: `${location}-not-regular`,
+        isCloudPlaceholder: false,
+      }
+    }
+  }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {
+        exists: false,
+        invalidReason: null,
+        isCloudPlaceholder: false,
+      }
+    }
+    return {
+      exists: true,
+      invalidReason: `${location}-inspection-unavailable`,
+      isCloudPlaceholder: false,
+    }
+  }
+
+  const availability = getFileAvailability(absolutePath)
+  if (!availability.exists) {
+    return {
+      exists: true,
+      invalidReason: `${location}-inspection-unavailable`,
+      isCloudPlaceholder: false,
+    }
+  }
+
+  return {
+    exists: true,
+    invalidReason: null,
+    isCloudPlaceholder: availability.isCloudPlaceholder,
+  }
+}
+
+function inspectNotesAssets(input: {
+  context: ScanContext
+  notePath: string
+  notesRoot: string
+  source: string
+}): void {
+  const paths = getNotesPaths(getVaultPath())
+
+  for (const assetName of extractNotesAssetNames(input.source)) {
+    const sourcePath = path.join(paths.legacyAssetsPath, assetName)
+    const destinationPath = path.join(paths.assetsPath, assetName)
+    const sourceAvailability = inspectNotesAssetPath(sourcePath, 'source')
+    const destinationAvailability = inspectNotesAssetPath(
+      destinationPath,
+      'destination',
+    )
+    const details = {
+      assetName,
+      destination: toPosixPath(path.relative(input.notesRoot, destinationPath)),
+      source: toPosixPath(path.relative(input.notesRoot, sourcePath)),
+    }
+
+    const invalidReason
+      = sourceAvailability.invalidReason ?? destinationAvailability.invalidReason
+    if (invalidReason) {
+      addWarning(input.context, {
+        code: 'NOTES_ASSET_MIGRATION_PENDING',
+        details: { ...details, reason: invalidReason },
+        path: input.notePath,
+        space: 'notes',
+      })
+      continue
+    }
+
+    if (
+      sourceAvailability.isCloudPlaceholder
+      || destinationAvailability.isCloudPlaceholder
+    ) {
+      addWarning(input.context, {
+        code: 'NOTES_ASSET_MIGRATION_PENDING',
+        details: {
+          ...details,
+          reason:
+            sourceAvailability.isCloudPlaceholder
+            && destinationAvailability.isCloudPlaceholder
+              ? 'source-and-destination-placeholder'
+              : sourceAvailability.isCloudPlaceholder
+                ? 'source-placeholder'
+                : 'destination-placeholder',
+        },
+        path: input.notePath,
+        space: 'notes',
+      })
+      continue
+    }
+
+    if (sourceAvailability.exists && destinationAvailability.exists) {
+      try {
+        const isEqual
+          = hashLocalFile(sourcePath) === hashLocalFile(destinationPath)
+        addWarning(input.context, {
+          code: isEqual
+            ? 'NOTES_LEGACY_ASSET'
+            : 'NOTES_ASSET_DESTINATION_CONFLICT',
+          details: {
+            ...details,
+            reason: isEqual ? 'legacy-copy-remains' : 'content-mismatch',
+          },
+          path: input.notePath,
+          space: 'notes',
+        })
+      }
+      catch {
+        addWarning(input.context, {
+          code: 'NOTES_ASSET_MIGRATION_PENDING',
+          details: { ...details, reason: 'inspection-unavailable' },
+          path: input.notePath,
+          space: 'notes',
+        })
+      }
+      continue
+    }
+
+    if (sourceAvailability.exists) {
+      addWarning(input.context, {
+        code: 'NOTES_LEGACY_ASSET',
+        details: { ...details, reason: 'destination-missing' },
+        path: input.notePath,
+        space: 'notes',
+      })
+      continue
+    }
+
+    if (!destinationAvailability.exists) {
+      addWarning(input.context, {
+        code: 'NOTES_ASSET_MISSING',
+        details: { ...details, reason: 'source-and-destination-missing' },
+        path: input.notePath,
+        space: 'notes',
+      })
+    }
+  }
+}
+
 function createFileItem(input: {
   action: VaultDoctorItem['action']
   absolutePath: string
@@ -141,11 +323,9 @@ function listMarkdownFiles(rootPath: string): string[] {
   const files: string[] = []
 
   function walk(currentPath: string): void {
-    if (!fs.pathExistsSync(currentPath)) {
-      return
-    }
-
-    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+    // Fail closed: stat-ошибка (EIO) не должна превращаться в пустой
+    // listing — аудит показал бы ложно-чистый vault.
+    for (const entry of readDirEntriesFailClosed(currentPath)) {
       if (entry.name.startsWith('.') && entry.name !== META_DIR_NAME) {
         continue
       }
@@ -179,12 +359,10 @@ function listFolders(
   const folders: string[] = []
 
   function walk(currentPath: string): void {
-    if (!fs.pathExistsSync(currentPath)) {
-      return
-    }
-
     const isRoot = currentPath === rootPath
-    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
+    // Fail closed: stat-ошибка (EIO) не должна превращаться в пустой
+    // listing — аудит показал бы ложно-чистый vault.
+    for (const entry of readDirEntriesFailClosed(currentPath)) {
       if (!entry.isDirectory()) {
         continue
       }
@@ -255,7 +433,32 @@ function inspectMarkdownEntity(input: {
   space: EntityScanRecord['space']
 }): EntityScanRecord | null {
   const absolutePath = path.join(input.rootPath, input.filePath)
-  const source = fs.readFileSync(absolutePath, 'utf8')
+
+  // Недокачанный облачный файл нельзя аудировать без блокирующего чтения:
+  // он уходит в фоновую докачку и пропускается в этом прогоне Doctor.
+  if (getFileAvailability(absolutePath).isCloudPlaceholder) {
+    enqueueCloudDownload(absolutePath)
+    return null
+  }
+
+  let source: string
+  try {
+    source = fs.readFileSync(absolutePath, 'utf8')
+  }
+  catch {
+    enqueueCloudDownload(absolutePath)
+    return null
+  }
+
+  if (input.space === 'notes') {
+    inspectNotesAssets({
+      context: input.context,
+      notePath: input.filePath,
+      notesRoot: input.rootPath,
+      source,
+    })
+  }
+
   const fileName = path.basename(input.filePath)
   const fingerprint = getFingerprint(absolutePath)
 
@@ -318,6 +521,7 @@ function inspectMarkdownEntity(input: {
     ? {
         filePath: input.filePath,
         fingerprint,
+        folderId: normalizeId(parsed.frontmatter.folderId),
         id,
         kind: input.kind,
         space: input.space,
@@ -396,6 +600,49 @@ function getStateIds(
   return loadHttpState(getHttpPaths(vaultPath)).requests.map(item => item.id)
 }
 
+function getStateIndexedFilePaths(
+  space: Extract<VaultDoctorSpace, 'code' | 'http' | 'notes'>,
+): Set<string> {
+  const vaultPath = getVaultPath()
+
+  const filePaths
+    = space === 'code'
+      ? loadState(getPaths(vaultPath)).snippets.map(item => item.filePath)
+      : space === 'notes'
+        ? loadNotesState(getNotesPaths(vaultPath)).notes.map(
+            item => item.filePath,
+          )
+        : loadHttpState(getHttpPaths(vaultPath)).requests.map(
+            item => item.filePath,
+          )
+
+  return new Set(filePaths.map(filePath => filePath.toLowerCase()))
+}
+
+// Файл с валидным frontmatter-id, которого нет в state-индексе, приложение
+// не отображает до полного пересканирования: Doctor предлагает регистрацию
+// (apply выполняет пересинк пространства, который заберёт файл в индекс).
+function collectUnindexedFiles(
+  context: ScanContext,
+  space: Extract<VaultDoctorSpace, 'code' | 'http' | 'notes'>,
+  records: EntityScanRecord[],
+): void {
+  const indexedFilePaths = getStateIndexedFilePaths(space)
+
+  for (const record of records) {
+    if (!indexedFilePaths.has(record.filePath.toLowerCase())) {
+      addItem(context, {
+        action: 'register-file',
+        fingerprint: record.fingerprint,
+        kind: record.kind,
+        path: record.filePath,
+        space,
+        status: 'pending',
+      })
+    }
+  }
+}
+
 function getNextEntityId(
   space: Extract<VaultDoctorSpace, 'code' | 'http' | 'notes'>,
 ): () => number {
@@ -404,7 +651,15 @@ function getNextEntityId(
 
   listMarkdownFiles(rootPath).forEach((filePath) => {
     try {
-      const source = fs.readFileSync(path.join(rootPath, filePath), 'utf8')
+      const absolutePath = path.join(rootPath, filePath)
+
+      // Недокачанный файл пропускается: его чтение заблокировало бы main
+      // process, а id из него в этот прогон всё равно не получить.
+      if (getFileAvailability(absolutePath).isCloudPlaceholder) {
+        return
+      }
+
+      const source = fs.readFileSync(absolutePath, 'utf8')
       const parsed = readFrontmatter(source)
       const id = normalizeId(parsed.frontmatter.id)
       if (id) {
@@ -487,6 +742,15 @@ function applyDuplicateIdDecisions(
       }
 
       const absolutePath = item.fingerprint.path
+
+      // Недокачанный файл не переписывается: чтение заблокировало бы main
+      // process, а запись затёрла бы облачное содержимое. Элемент остаётся
+      // неприменённым, пользователь повторит после докачки.
+      if (getFileAvailability(absolutePath).isCloudPlaceholder) {
+        enqueueCloudDownload(absolutePath)
+        return
+      }
+
       const source = fs.readFileSync(absolutePath, 'utf8')
       fs.writeFileSync(
         absolutePath,
@@ -510,7 +774,7 @@ function scanCode(context: ScanContext): void {
 
   listFolders(paths.vaultPath, skipRootNames).forEach((folderPath) => {
     const metaPath = path.join(paths.vaultPath, folderPath, META_FILE_NAME)
-    if (!fs.pathExistsSync(metaPath)) {
+    if (!metaFileExists(metaPath)) {
       addItem(
         context,
         createFileItem({
@@ -525,7 +789,12 @@ function scanCode(context: ScanContext): void {
     }
   })
 
-  listMarkdownFiles(paths.vaultPath).forEach((filePath) => {
+  const snippetFiles = listMarkdownFiles(paths.vaultPath)
+  primeDatalessChecks(
+    snippetFiles.map(filePath => path.join(paths.vaultPath, filePath)),
+  )
+
+  snippetFiles.forEach((filePath) => {
     const record = inspectMarkdownEntity({
       context,
       filePath,
@@ -539,15 +808,52 @@ function scanCode(context: ScanContext): void {
   })
 
   collectDuplicateIds(context, records)
+  collectUnindexedFiles(context, 'code', records)
+}
+
+// Fail closed: stat-ошибка (EIO) не считается отсутствием файла — иначе
+// аудит предложил бы пересоздать существующие метаданные папки.
+function metaFileExists(metaPath: string): boolean {
+  try {
+    fs.statSync(metaPath)
+    return true
+  }
+  catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT'
+  }
+}
+
+function readNotesFolderIdFromMetadata(metaPath: string): number | null {
+  // Недокачанный .meta.yaml не читается синхронно: id папки в этот прогон
+  // не получить, заметки этой папки не считаются dangling.
+  if (getFileAvailability(metaPath).isCloudPlaceholder) {
+    enqueueCloudDownload(metaPath)
+    return null
+  }
+
+  try {
+    const parsed = yaml.load(fs.readFileSync(metaPath, 'utf8')) as {
+      id?: unknown
+    } | null
+    return normalizeId(parsed?.id)
+  }
+  catch {
+    return null
+  }
 }
 
 function scanNotes(context: ScanContext): void {
   const paths = getNotesPaths(getVaultPath())
   const records: EntityScanRecord[] = []
+  const diskFolderIds = new Set<number>()
+  let hasUnreadableFolderMetadata = false
 
   listFolders(paths.notesRoot).forEach((folderPath) => {
     const metaPath = path.join(paths.notesRoot, folderPath, META_FILE_NAME)
-    if (!fs.pathExistsSync(metaPath)) {
+    if (!metaFileExists(metaPath)) {
+      // Папка без метаданных получит id при следующем синке: судить о
+      // dangling-ссылках в этот прогон нельзя.
+      hasUnreadableFolderMetadata = true
       addItem(
         context,
         createFileItem({
@@ -559,10 +865,24 @@ function scanNotes(context: ScanContext): void {
           status: 'pending',
         }),
       )
+      return
+    }
+
+    const folderId = readNotesFolderIdFromMetadata(metaPath)
+    if (folderId) {
+      diskFolderIds.add(folderId)
+    }
+    else {
+      hasUnreadableFolderMetadata = true
     }
   })
 
-  listMarkdownFiles(paths.notesRoot).forEach((filePath) => {
+  const noteFiles = listMarkdownFiles(paths.notesRoot)
+  primeDatalessChecks(
+    noteFiles.map(filePath => path.join(paths.notesRoot, filePath)),
+  )
+
+  noteFiles.forEach((filePath) => {
     const record = inspectMarkdownEntity({
       context,
       filePath,
@@ -576,6 +896,21 @@ function scanNotes(context: ScanContext): void {
   })
 
   collectDuplicateIds(context, records)
+  collectUnindexedFiles(context, 'notes', records)
+
+  // folderId во frontmatter приоритетнее пути (см. readNoteFromFile):
+  // ссылка на несуществующую папку делает заметку невидимой в дереве папок.
+  if (!hasUnreadableFolderMetadata) {
+    for (const record of records) {
+      if (record.folderId && !diskFolderIds.has(record.folderId)) {
+        addWarning(context, {
+          code: 'DANGLING_FOLDER_ID',
+          path: record.filePath,
+          space: 'notes',
+        })
+      }
+    }
+  }
 }
 
 function scanHttp(context: ScanContext): void {
@@ -583,7 +918,12 @@ function scanHttp(context: ScanContext): void {
   const records: EntityScanRecord[] = []
   const state = loadHttpState(paths)
 
-  listMarkdownFiles(paths.httpRoot).forEach((filePath) => {
+  const httpFiles = listMarkdownFiles(paths.httpRoot)
+  primeDatalessChecks(
+    httpFiles.map(filePath => path.join(paths.httpRoot, filePath)),
+  )
+
+  httpFiles.forEach((filePath) => {
     const record = inspectMarkdownEntity({
       context,
       filePath,
@@ -631,6 +971,7 @@ function scanHttp(context: ScanContext): void {
   }
 
   collectDuplicateIds(context, records)
+  collectUnindexedFiles(context, 'http', records)
 }
 
 function normalizeMathSheet(
@@ -722,7 +1063,21 @@ function readNormalizedMathState(): {
 
 function scanMath(context: ScanContext): void {
   const statePath = getMathStatePath()
-  const { changed } = readNormalizedMathState()
+
+  // math/.state.yaml может быть ещё не докачан из облака: аудит без
+  // содержимого невозможен, пространство проверится после докачки.
+  let changed: boolean
+  try {
+    changed = readNormalizedMathState().changed
+  }
+  catch (error) {
+    if (isCloudFileNotDownloadedError(error)) {
+      return
+    }
+
+    throw error
+  }
+
   if (!changed) {
     return
   }
@@ -769,6 +1124,30 @@ export function previewVaultDoctor(
 ): VaultDoctorResponse {
   const context = createContext()
   const spaces = normalizeSpaces(input)
+
+  // Пока запрошенное пространство не сверено с диском после открытия
+  // (каталоги могут быть недокачаны из облака), полный аудит невозможен без
+  // блокирующего обхода: возвращается явный notReady, чтобы пустой результат
+  // не выглядел как чистый vault. Готовность проверяется только для
+  // запрошенных пространств (аудит math не должен ждать http).
+  const vaultRootPath = getVaultPath()
+  const isRequestedSpaceNotReady
+    = (spaces.includes('code')
+      && !isCodeVaultDiskReady(getPaths(vaultRootPath)))
+    || (spaces.includes('notes')
+      && !isNotesVaultDiskReady(getNotesPaths(vaultRootPath)))
+    || (spaces.includes('http')
+      && !isHttpVaultDiskReady(getHttpPaths(vaultRootPath)))
+
+  if (isRequestedSpaceNotReady) {
+    return {
+      conflictGroups: [],
+      items: [],
+      notReady: true,
+      summary: buildSummary(context),
+      warnings: [],
+    }
+  }
 
   if (spaces.includes('code')) {
     scanCode(context)
@@ -841,7 +1220,20 @@ function repairHttpEnvironmentState(): void {
 }
 
 function repairMathState(): void {
-  const { state } = readNormalizedMathState()
+  // math/.state.yaml может быть ещё не докачан из облака: запись поверх
+  // плейсхолдера уничтожила бы облачную версию.
+  let state: MathNotebookStore
+  try {
+    state = readNormalizedMathState().state
+  }
+  catch (error) {
+    if (isCloudFileNotDownloadedError(error)) {
+      return
+    }
+
+    throw error
+  }
+
   writeSpaceStateImmediate(getMathStatePath(), state)
 }
 
@@ -863,6 +1255,13 @@ export function applyVaultDoctor(
   input?: VaultDoctorInput,
 ): VaultDoctorResponse {
   const before = previewVaultDoctor(input)
+
+  // Аудит не выполнялся (пространства ещё сверяются с диском): применять
+  // «ремонт» по пустому результату нельзя.
+  if (before.notReady) {
+    return before
+  }
+
   const appliedDecisionItems = applyDuplicateIdDecisions(
     before,
     input?.decisions,
@@ -875,7 +1274,9 @@ export function applyVaultDoctor(
     syncRuntimeWithDisk(getPaths(getVaultPath()))
   }
   if (spaces.includes('notes') && !conflictedSpaces.has('notes')) {
-    syncNotesRuntimeWithDisk(getNotesPaths(getVaultPath()))
+    syncNotesRuntimeWithDisk(getNotesPaths(getVaultPath()), {
+      scheduleAssetsMigration: false,
+    })
   }
   if (spaces.includes('http')) {
     if (!conflictedSpaces.has('http')) {

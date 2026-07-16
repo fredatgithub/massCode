@@ -1,11 +1,17 @@
 import type { MarkdownState, MarkdownStateFile, Paths } from './types'
 import { invalidateRuntimeSearchIndex } from './search'
 import { createStateAdapter } from './shared/stateAdapter'
-import { syncFolderUiWithFolders } from './shared/stateUtils'
+import {
+  syncFolderIdByPathWithFolders,
+  syncFolderUiWithFolders,
+} from './shared/stateUtils'
 import { flushPendingStateWrites } from './shared/stateWriter'
 
 export { flushPendingStateWrites, syncFolderUiWithFolders }
 
+// Версия 3: записи snippets несут денормализованные метаданные списка и
+// stat-сигнатуру (`meta`). Записи без meta (v2) дозаполняются организно:
+// файл читается один раз при первом скане и метаданные попадают в индекс.
 export function createDefaultState(): MarkdownState {
   return {
     counters: {
@@ -18,13 +24,13 @@ export function createDefaultState(): MarkdownState {
     folders: [],
     snippets: [],
     tags: [],
-    version: 2,
+    version: 3,
   }
 }
 
 const adapter = createStateAdapter<MarkdownState, MarkdownStateFile, Paths>({
   createDefaultState,
-  minVersion: 2,
+  minVersion: 3,
   getDirs: paths => [
     paths.vaultPath,
     paths.metaDirPath,
@@ -33,8 +39,18 @@ const adapter = createStateAdapter<MarkdownState, MarkdownStateFile, Paths>({
   ],
   toPersistedState: state => ({
     counters: state.counters,
+    // Fallback path → folder id для холодного старта с недокачанными
+    // .meta.yaml (см. syncFolderIdByPathWithFolders).
+    ...(state.folderIdByPath ? { folderIdByPath: state.folderIdByPath } : {}),
     folderUi: state.folderUi,
-    snippets: state.snippets,
+    // Записи индекса нормализуются до известной схемы: state.json
+    // синхронизируется между устройствами и не должен накапливать
+    // посторонние поля.
+    snippets: state.snippets.map(({ filePath, id, meta }) => ({
+      filePath,
+      id,
+      ...(meta ? { meta } : {}),
+    })),
     tags: state.tags,
     version: state.version,
   }),
@@ -43,6 +59,9 @@ const adapter = createStateAdapter<MarkdownState, MarkdownStateFile, Paths>({
 
     return {
       counters: { ...defaults.counters, ...raw.counters },
+      ...(raw.folderIdByPath && typeof raw.folderIdByPath === 'object'
+        ? { folderIdByPath: raw.folderIdByPath }
+        : {}),
       folderUi: (raw.folderUi ?? {}) as MarkdownState['folderUi'],
       folders: legacyFolders,
       snippets: Array.isArray(raw.snippets) ? raw.snippets : [],
@@ -52,6 +71,7 @@ const adapter = createStateAdapter<MarkdownState, MarkdownStateFile, Paths>({
   },
   onBeforeSave: (state) => {
     syncFolderUiWithFolders(state)
+    syncFolderIdByPathWithFolders(state)
     invalidateRuntimeSearchIndex(state)
   },
 })

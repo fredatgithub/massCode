@@ -1,6 +1,7 @@
 import { useContentSort } from '@/composables/useContentSort'
 import { useDialog } from '@/composables/useDialog'
 import { useDonations } from '@/composables/useDonations'
+import { useSonner } from '@/composables/useSonner'
 import { markPersistedStorageMutation } from '@/composables/useStorageMutation'
 import { i18n } from '@/electron'
 import { getContiguousSelection } from '@/utils'
@@ -11,7 +12,12 @@ import { useNoteContent } from './useNoteContent'
 import { useNotesApp } from './useNotesApp'
 import { isSearch, notesBySearch, searchQuery } from './useNoteSearch'
 
-const { notesState, focusNoteNameInput, notesCreateKind } = useNotesApp()
+const {
+  notesState,
+  focusNoteNameInput,
+  notesCreateKind,
+  hideCompletedTasksInFolders,
+} = useNotesApp()
 const { getContentSortQuery } = useContentSort()
 
 // --- Types ---
@@ -36,6 +42,7 @@ interface NoteRecord {
   folder: NoteFolderInfo | null
   isFavorites: number
   isDeleted: number
+  pendingCloudDownload?: boolean
   createdAt: number
   updatedAt: number
 }
@@ -64,6 +71,7 @@ interface NotesQuery {
   propertyStatus?: string
   propertyStatusNot?: string
   propertyType?: string
+  hideCompletedTasks?: number
 }
 
 interface NotesUpdate {
@@ -390,6 +398,13 @@ export async function getNotes(query?: NotesQuery) {
       ...getContentSortQuery('notes'),
     }
 
+    if (
+      resolvedQuery.folderId !== undefined
+      && hideCompletedTasksInFolders.value
+    ) {
+      resolvedQuery.hideCompletedTasks = 1
+    }
+
     const { data: responseData } = await api.notes.getNotes(resolvedQuery)
 
     if (requestToken !== notesRequestToken) {
@@ -560,11 +575,19 @@ async function updateNote(noteId: number, data: NotesUpdate) {
 async function updateNotes(noteIds: number[], data: NotesUpdate[]) {
   markPersistedStorageMutation()
 
-  await Promise.all(
+  // Ошибка одного элемента (например 503 на pending-записи) не прерывает
+  // batch: остальные применяются, список обновляется в любом случае, о
+  // пропуске сообщает общий 503-тост API-клиента.
+  const results = await Promise.allSettled(
     noteIds.map((noteId, index) =>
       api.notes.patchNotesById(String(noteId), data[index]),
     ),
   )
+  results.forEach((result) => {
+    if (result.status === 'rejected') {
+      console.error(result.reason)
+    }
+  })
 
   await getNotes(queryByLibraryOrFolderOrSearch.value)
   await refreshSelectedNote()
@@ -592,9 +615,16 @@ async function deleteNote(noteId: number) {
 async function deleteNotes(noteIds: number[]) {
   markPersistedStorageMutation()
 
-  await Promise.all(
+  // Ошибка одного элемента не прерывает batch: остальные применяются,
+  // список обновляется в любом случае.
+  const results = await Promise.allSettled(
     noteIds.map(noteId => api.notes.deleteNotesById(String(noteId))),
   )
+  results.forEach((result) => {
+    if (result.status === 'rejected') {
+      console.error(result.reason)
+    }
+  })
 
   await getNotes(queryByLibraryOrFolderOrSearch.value)
 }
@@ -687,6 +717,45 @@ async function emptyTrash() {
   if (isConfirmed) {
     await api.notes.deleteNotesTrash()
     await getNotes(queryByLibraryOrFolderOrSearch.value)
+  }
+}
+
+async function cleanupCompletedTasks(options?: { skipConfirm?: boolean }) {
+  const { confirm } = useDialog()
+  const { sonner } = useSonner()
+  const previousNoteId = notesState.noteId
+
+  if (!options?.skipConfirm) {
+    const isConfirmed = await confirm({
+      title: i18n.t('notes.tasks.cleanupConfirmTitle'),
+      content: i18n.t('notes.tasks.cleanupConfirmMessage'),
+    })
+
+    if (!isConfirmed) {
+      return
+    }
+  }
+
+  try {
+    markPersistedStorageMutation()
+    const { data } = await api.notes.postNotesTasksCleanup()
+    const count = data.count
+
+    await getNotes(queryByLibraryOrFolderOrSearch.value)
+    await refreshSelectedNote()
+    selectFirstNoteIfCurrentSelectionIsMissing(previousNoteId)
+
+    sonner({
+      message:
+        count > 0
+          ? i18n.t('notes.tasks.cleanupDone', { count })
+          : i18n.t('notes.tasks.cleanupEmpty'),
+      type: 'success',
+    })
+  }
+  catch (error) {
+    console.error(error)
+    sonner({ message: i18n.t('notes.tasks.cleanupError'), type: 'error' })
   }
 }
 
@@ -786,6 +855,7 @@ export function useNotes() {
 
   return {
     addTagToNote,
+    cleanupCompletedTasks,
     clearNotes,
     clearNotesState,
     createNote,

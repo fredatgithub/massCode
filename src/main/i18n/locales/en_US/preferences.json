@@ -45,6 +45,24 @@
         "invalid-frontmatter": "Invalid frontmatter",
         "conflicted-copy": "Conflicted copy"
       },
+      "assetWarnings": {
+        "NOTES_LEGACY_ASSET": {
+          "message": "{{assetName}} is still stored in the legacy Notes assets folder.",
+          "recommendation": "Keep the whole vault synchronized and scan again after migration completes."
+        },
+        "NOTES_ASSET_MIGRATION_PENDING": {
+          "message": "{{assetName}} is not available locally for migration inspection.",
+          "recommendation": "Make the asset available locally, then scan the vault again."
+        },
+        "NOTES_ASSET_DESTINATION_CONFLICT": {
+          "message": "{{assetName}} differs between the legacy and current Notes assets folders.",
+          "recommendation": "Compare both files and keep the correct copy before removing either one."
+        },
+        "NOTES_ASSET_MISSING": {
+          "message": "{{assetName}} is missing from both Notes assets folders.",
+          "recommendation": "Restore the asset to the vault or remove its reference from the note."
+        }
+      },
       "moreWarnings": "+{{count}} more warnings",
       "warnings": "Warnings"
     }
@@ -99,7 +117,7 @@
     }
   },
   "notesEditor": {
-    "label": "Note Editor",
+    "label": "Notes",
     "fontSize": {
       "label": "Font Size",
       "description": "Base font size in pixels for the notes editor."
@@ -127,6 +145,10 @@
       "label": "Limit Width",
       "description": "Maximum content width for comfortable reading (700px)."
     },
+    "wrapTables": {
+      "label": "Wrap Table Cells",
+      "description": "Wrap text in table cells to keep wide tables within the editor. Narrow tables keep their natural width."
+    },
     "lineNumbers": {
       "label": "Line Numbers",
       "description": "Line numbers in the gutter. Only available in Raw mode."
@@ -134,6 +156,14 @@
   },
   "appearance": {
     "label": "Appearance",
+    "dockBadge": {
+      "label": "Dock Icon Counter",
+      "none": "Don't Show",
+      "codeInbox": "Code Inbox",
+      "notesInbox": "Notes Inbox",
+      "tasksDue": "Tasks Due Today",
+      "permissionDenied": "macOS blocked the Dock counter. Allow notifications and badges for massCode in System Settings. Unsigned development builds may not support Dock badges."
+    },
     "theme": {
       "label": "Theme",
       "builtIn": "Built-in",
@@ -183,6 +213,22 @@
       "refreshing": "Refreshing...",
       "refreshed": "Crypto rates updated",
       "rateLimited": "Rate limit exceeded. Try again later."
+    }
+  },
+  "tasks": {
+    "label": "Tasks",
+    "autoCleanup": {
+      "label": "Auto-clean completed",
+      "description": "Move completed tasks to trash on a schedule. They stay in trash until you empty it.",
+      "never": "Never",
+      "1d": "Every day",
+      "7d": "Every 7 days",
+      "30d": "Every 30 days"
+    },
+    "cleanupNow": {
+      "label": "Clean up now",
+      "button": "Move completed to trash",
+      "description": "Move all completed tasks to trash right now."
     }
   },
   "http": {

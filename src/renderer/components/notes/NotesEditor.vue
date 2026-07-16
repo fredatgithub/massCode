@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import type { NotesEditorMode } from '@/composables/spaces/notes/useNotesApp'
+import type { EditorMenuCommand } from './NotesEditorContextMenu.vue'
 import { createCodeHighlight } from '@/components/cm-extensions/codeHighlight'
 import { editorScrollbarTheme } from '@/components/cm-extensions/scrollbarTheme'
+import * as ContextMenu from '@/components/ui/shadcn/context-menu'
 import {
   applyPendingNavigationUIStateForNote,
   registerNavigationNoteUIState,
+  useCopyToClipboard,
   useNotesEditor,
   useTheme,
 } from '@/composables'
+import { i18n, ipc } from '@/electron'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { indentUnit } from '@codemirror/language'
@@ -21,8 +25,30 @@ import {
   placeholder,
 } from '@codemirror/view'
 import { GFM, type MarkdownConfig } from '@lezer/markdown'
+import {
+  clearInlineFormatting,
+  getHeadingLevel,
+  insertCallout,
+  insertCodeBlock,
+  insertHorizontalRule,
+  insertLink,
+  insertTable,
+  normalizeLineBreaks,
+  setBody,
+  setHeading,
+  toggleBold,
+  toggleBulletList,
+  toggleHighlight,
+  toggleInlineCode,
+  toggleItalic,
+  toggleOrderedList,
+  toggleQuote,
+  toggleStrikethrough,
+  toggleTaskList,
+} from './cm-extensions/editorCommands'
 import { editorFocusExtension } from './cm-extensions/editorFocus'
 import { createExternalLinksNavigation } from './cm-extensions/externalLinks'
+import { fencedCodePairInput } from './cm-extensions/fencedCodeInput'
 import { createHideMarkup } from './cm-extensions/hideMarkup'
 import {
   createImageBlocks,
@@ -37,8 +63,17 @@ import { Highlight } from './cm-extensions/markdownHighlight'
 import { markdownShortcuts } from './cm-extensions/markdownShortcuts'
 import { createMermaidBlocks } from './cm-extensions/mermaidBlocks'
 import { moveSelectionToAdjacentMermaidSource } from './cm-extensions/mermaidNavigation'
-import { createTableBlocks } from './cm-extensions/tableBlocks'
-import { moveSelectionToAdjacentTableSource } from './cm-extensions/tableNavigation'
+import { revealSelectionFreeze } from './cm-extensions/revealSelection'
+import {
+  createTableBlocks,
+  getActiveTableCellContext,
+  getActiveTableCellEditor,
+  requestTableCellFocus,
+  runActiveTableCellCommand,
+  type TableCellMenuCommand,
+  type TableCellMenuContext,
+} from './cm-extensions/tableBlocks'
+import { moveSelectionToAdjacentTableCell } from './cm-extensions/tableNavigation'
 import { createNotesEditTheme } from './theme'
 
 interface Props {
@@ -54,6 +89,7 @@ const props = withDefaults(defineProps<Props>(), {
 const content = defineModel<string>('content', { default: '' })
 const { isDark } = useTheme()
 const { settings: notesSettings } = useNotesEditor()
+const copyToClipboard = useCopyToClipboard()
 const isRawMode = computed(() => props.mode === 'raw')
 const isPreviewMode = computed(() => props.mode === 'preview')
 
@@ -123,14 +159,14 @@ const navigationKeymap: KeyBinding[] = [
     key: 'ArrowDown',
     run: view =>
       moveSelectionToAdjacentMermaidSource(view, 'down')
-      || moveSelectionToAdjacentTableSource(view, 'down')
+      || moveSelectionToAdjacentTableCell(view, 'down')
       || moveSelectionToAdjacentImageSource(view, 'down'),
   },
   {
     key: 'ArrowUp',
     run: view =>
       moveSelectionToAdjacentMermaidSource(view, 'up')
-      || moveSelectionToAdjacentTableSource(view, 'up')
+      || moveSelectionToAdjacentTableCell(view, 'up')
       || moveSelectionToAdjacentImageSource(view, 'up'),
   },
 ]
@@ -148,6 +184,9 @@ const presentationTheme = EditorView.theme({
     lineHeight: '1.58',
     maxWidth: '980px',
     margin: '0 auto',
+    // Широкий блок-виджет не должен распирать контент и давать редактору
+    // горизонтальную прокрутку (см. minWidth в createNotesEditThemeStyles).
+    minWidth: '0',
   },
   '.cm-gutters': {
     display: 'none',
@@ -209,8 +248,13 @@ function createEditorState(doc: string): EditorState {
     extensions.push(lineNumbersExtension())
   }
 
+  if (editable && !raw) {
+    extensions.push(fencedCodePairInput)
+  }
+
   if (!raw) {
     extensions.push(
+      revealSelectionFreeze,
       createMermaidBlocks({
         enabled: true,
         isDark: isDark.value,
@@ -218,7 +262,9 @@ function createEditorState(doc: string): EditorState {
       }),
       createTableBlocks({
         enabled: true,
-        showSourceWhenSelectionInside: editable,
+        editable,
+        isDark: isDark.value,
+        wrapCells: notesSettings.wrapTables,
       }),
       createImageBlocks({
         enabled: true,
@@ -228,6 +274,10 @@ function createEditorState(doc: string): EditorState {
       createMarkdownDecorations({
         interactiveTaskMarkers: editable,
         calloutTitleMode: preview ? 'replace' : 'smart',
+        codeBlockCopy: {
+          label: i18n.t('button.copy'),
+          copy: copyToClipboard,
+        },
       }),
       createHideMarkup({ alwaysHide: preview }),
       createListLineIndent({ interactiveTaskMarkers: editable }),
@@ -341,6 +391,16 @@ watch(isDark, () => {
   applyExternalState(content.value)
 })
 
+function focusEditor() {
+  nextTick(() => {
+    view?.focus()
+  })
+}
+
+defineExpose({
+  focusEditor,
+})
+
 async function syncNavigationNoteUIStateRegistration(noteId = props.noteId) {
   unregisterNavigationNoteUIState?.()
   unregisterNavigationNoteUIState = undefined
@@ -357,13 +417,159 @@ async function syncNavigationNoteUIStateRegistration(noteId = props.noteId) {
   })
 
   await nextTick()
-  applyPendingNavigationUIStateForNote(noteId)
+
+  // Пока ожидали обновление DOM, пользователь мог выбрать другую заметку.
+  if (!view || props.noteId !== noteId) {
+    return
+  }
+
+  // Back/Forward восстанавливает сохранённую позицию. При обычном выборе
+  // новая заметка открывается сверху. Эффект CodeMirror также пересчитывает
+  // viewport, чтобы preview-декорации сразу построились для начала документа.
+  if (!applyPendingNavigationUIStateForNote(noteId)) {
+    view.dispatch({
+      effects: EditorView.scrollIntoView(0, { y: 'start', yMargin: 0 }),
+    })
+  }
 }
 
 watch(
   () => props.noteId,
   noteId => syncNavigationNoteUIStateRegistration(noteId),
 )
+
+// Контекст контекстного меню форматирования, снимается на правый клик.
+const menuHasSelection = ref(false)
+const menuHeadingLevel = ref(0)
+const menuTable = shallowRef<TableCellMenuContext | null>(null)
+let pendingInsertedTableStart: number | null = null
+
+function onEditorContextMenu() {
+  if (!view)
+    return
+
+  // Правый клик в ячейке таблицы: меню работает с вложенным редактором.
+  const cellEditor = getActiveTableCellEditor()
+  const target = cellEditor ?? view
+
+  menuHasSelection.value = !target.state.selection.main.empty
+  menuHeadingLevel.value = cellEditor ? 0 : getHeadingLevel(view)
+  menuTable.value = getActiveTableCellContext()
+}
+
+function onContextMenuCloseAutoFocus(event: Event) {
+  // Фокус должен вернуться во вложенный редактор ячейки (а не на контейнер):
+  // после команды он уже там, а при закрытии меню без команды возвращаем сами.
+  const cellEditor = getActiveTableCellEditor()
+  if (cellEditor) {
+    event.preventDefault()
+    cellEditor.focus()
+    return
+  }
+
+  if (pendingInsertedTableStart === null || !view)
+    return
+
+  event.preventDefault()
+  requestTableCellFocus(view, {
+    tableFrom: pendingInsertedTableStart,
+    selector: 'thead th:first-child',
+    mode: 'select',
+  })
+  pendingInsertedTableStart = null
+}
+
+function onMenuCommand(command: EditorMenuCommand) {
+  if (!view)
+    return
+
+  if (command.startsWith('table-')) {
+    runActiveTableCellCommand(command as TableCellMenuCommand)
+    return
+  }
+
+  // Внутри ячейки таблицы inline-команды идут во вложенный редактор, а
+  // блочные (заголовки, списки, вставка) не имеют смысла — игнорируем.
+  const cellEditor = getActiveTableCellEditor()
+  const inlineTarget = cellEditor ?? view
+  const isInlineCommand = [
+    'bold',
+    'italic',
+    'strikethrough',
+    'highlight',
+    'code',
+    'link',
+    'clear-formatting',
+  ].includes(command)
+
+  if (cellEditor && !isInlineCommand)
+    return
+
+  if (command.startsWith('heading-')) {
+    setHeading(view, Number(command.slice('heading-'.length)))
+    return
+  }
+
+  switch (command) {
+    case 'bold':
+      toggleBold(inlineTarget)
+      break
+    case 'italic':
+      toggleItalic(inlineTarget)
+      break
+    case 'strikethrough':
+      toggleStrikethrough(inlineTarget)
+      break
+    case 'highlight':
+      toggleHighlight(inlineTarget)
+      break
+    case 'code':
+      toggleInlineCode(inlineTarget)
+      break
+    case 'link':
+      insertLink(inlineTarget)
+      break
+    case 'clear-formatting':
+      clearInlineFormatting(inlineTarget)
+      break
+    case 'bullet-list':
+      toggleBulletList(view)
+      break
+    case 'numbered-list':
+      toggleOrderedList(view)
+      break
+    case 'task-list':
+      toggleTaskList(view)
+      break
+    case 'body':
+      setBody(view)
+      break
+    case 'quote':
+      toggleQuote(view)
+      break
+    case 'table':
+      pendingInsertedTableStart = insertTable(view)
+      break
+    case 'callout':
+      insertCallout(view)
+      break
+    case 'horizontal-rule':
+      insertHorizontalRule(view)
+      break
+    case 'code-block':
+      insertCodeBlock(view)
+      break
+  }
+}
+
+function onNormalizeLineBreaks() {
+  if (!view || isPreviewMode.value)
+    return
+
+  normalizeLineBreaks(view)
+}
+
+ipc.on('main-menu:normalize-note-line-breaks', onNormalizeLineBreaks)
 
 onMounted(() => {
   if (!editorContainer.value)
@@ -381,6 +587,7 @@ onMounted(() => {
 onUnmounted(() => {
   unregisterNavigationNoteUIState?.()
   unregisterNavigationNoteUIState = undefined
+  ipc.removeListeners('main-menu:normalize-note-line-breaks')
 
   if (view) {
     view.destroy()
@@ -391,10 +598,25 @@ onUnmounted(() => {
 
 <template>
   <div class="h-full overflow-hidden">
-    <div
-      ref="editorContainer"
-      class="h-full overflow-hidden"
-    />
+    <ContextMenu.ContextMenu>
+      <ContextMenu.ContextMenuTrigger
+        as-child
+        :disabled="isPreviewMode"
+      >
+        <div
+          ref="editorContainer"
+          class="h-full overflow-hidden"
+          @contextmenu="onEditorContextMenu"
+        />
+      </ContextMenu.ContextMenuTrigger>
+      <NotesEditorContextMenu
+        :has-selection="menuHasSelection"
+        :heading-level="menuHeadingLevel"
+        :table="menuTable"
+        @close-auto-focus="onContextMenuCloseAutoFocus"
+        @command="onMenuCommand"
+      />
+    </ContextMenu.ContextMenu>
     <NotesInternalLinksOverlay />
   </div>
 </template>

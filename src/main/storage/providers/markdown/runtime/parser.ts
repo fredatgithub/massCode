@@ -11,12 +11,21 @@ import path from 'node:path'
 import fs from 'fs-extra'
 import yaml from 'js-yaml'
 import {
+  enqueueCloudDownload,
+  prioritizeCloudDownload,
+} from '../cloudDownloads'
+import {
   LEGACY_FOLDER_META_FILE_NAME,
   META_FILE_NAME,
   NEW_LINE_SPLIT_RE,
 } from './constants'
 import { rememberAppFileChange } from './shared/appChanges'
-import { readYamlObjectFile, writeYamlObjectFile } from './shared/yaml'
+import { getFileAvailability } from './shared/cloudFiles'
+import {
+  isYamlFileCloudUnavailable,
+  readYamlObjectFile,
+  writeYamlObjectFile,
+} from './shared/yaml'
 
 export function readFolderMetadata(
   paths: Paths,
@@ -32,9 +41,22 @@ export function readFolderMetadata(
     return metaData
   }
 
+  // Недокачанный .meta.yaml — не «метаданных нет»: id папки существует, но
+  // сейчас неизвестен. Маркер запрещает legacy-миграции писать поверх
+  // плейсхолдера, а сам файл (крошечный и критичный для стабильности id)
+  // поднимается в начало очереди докачки.
+  if (isYamlFileCloudUnavailable(metaPath)) {
+    prioritizeCloudDownload(metaPath)
+    return { unavailable: true }
+  }
+
   // Step 2: Try legacy .masscode-folder.yml
   const legacyData = readYamlObjectFile<MarkdownFolderMetadataFile>(legacyPath)
   if (!legacyData) {
+    if (isYamlFileCloudUnavailable(legacyPath)) {
+      prioritizeCloudDownload(legacyPath)
+      return { unavailable: true }
+    }
     return {}
   }
 
@@ -105,8 +127,16 @@ export function writeFolderMetadataFile(
     .trim()
 
   const nextContent = `${body}\n`
+  const availability = getFileAvailability(metaPath)
 
-  if (fs.pathExistsSync(metaPath)) {
+  // Запись в недокачанный .meta.yaml затёрла бы облачные метаданные папки
+  // (включая её id): файл сначала докачивается в фоне.
+  if (availability.isCloudPlaceholder) {
+    enqueueCloudDownload(metaPath)
+    return
+  }
+
+  if (availability.exists) {
     const currentContent = fs.readFileSync(metaPath, 'utf8')
     if (currentContent === nextContent) {
       return

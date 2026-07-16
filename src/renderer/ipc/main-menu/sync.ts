@@ -24,10 +24,12 @@ const {
   isNotesPresentationShown,
   notesEditorMode,
   notesLayoutMode,
+  hideCompletedTasksInFolders,
 } = useNotesApp()
-const { httpLayoutMode } = useHttpApp()
+const { httpLayoutMode, httpState } = useHttpApp()
 const { isExecuting } = useHttpExecute()
-const { currentDraft } = useHttpRequests()
+const { currentDraft, currentRequest, isCurrentRequestLoading }
+  = useHttpRequests()
 const { isAvailableToCodePreview, selectedSnippetContent } = useSnippets()
 const { contentSortState } = useContentSort()
 
@@ -47,6 +49,7 @@ export function registerMainMenuContextSync() {
         isNotesPresentationShown.value,
         notesLayoutMode.value,
         notesEditorMode.value,
+        hideCompletedTasksInFolders.value,
         httpLayoutMode.value,
         contentSortState.code.sort,
         contentSortState.code.order,
@@ -60,6 +63,10 @@ export function registerMainMenuContextSync() {
         contentSortState.drawings.order,
         currentDraft.value?.url,
         isExecuting.value,
+        currentRequest.value?.pendingCloudDownload,
+        currentRequest.value?.id,
+        httpState.requestId,
+        isCurrentRequestLoading.value,
       ] as const,
     () => {
       ipc.send(
@@ -67,6 +74,7 @@ export function registerMainMenuContextSync() {
         createMainMenuContext({
           activeSpaceId: getActiveSpaceId(),
           compactListMode: isCompactListMode.value,
+          hideCompletedTasksInFolders: hideCompletedTasksInFolders.value,
           contentSort: {
             code: { ...contentSortState.code },
             notes: { ...contentSortState.notes },
@@ -91,7 +99,13 @@ export function registerMainMenuContextSync() {
           http: {
             layoutMode: httpLayoutMode.value,
             canSendRequest:
-              Boolean(currentDraft.value?.url) && !isExecuting.value,
+              Boolean(currentDraft.value?.url)
+              && !isExecuting.value
+              && !currentRequest.value?.pendingCloudDownload
+              // Полная запись выбранного запроса ещё грузится: draft пока
+              // принадлежит предыдущему, отправился бы не тот запрос.
+              && !isCurrentRequestLoading.value
+              && httpState.requestId === currentRequest.value?.id,
           },
         }),
       )

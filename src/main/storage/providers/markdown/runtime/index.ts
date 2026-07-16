@@ -56,6 +56,7 @@ export { readYamlObjectFile, writeYamlObjectFile } from './shared/yaml'
 export {
   buildSnippetTargetPath,
   createSnippetRecord,
+  ensureSnippetContentLoaded,
   findSnippetByContentId,
   findSnippetById,
   getSnippetTargetDirectory,
@@ -90,6 +91,8 @@ export {
 // Sync & Cache
 export {
   getRuntimeCache,
+  isCodeVaultDiskReady,
+  refreshPendingSnippetFiles,
   resetRuntimeCache,
   setRuntimeCache,
   syncCounters,
@@ -129,6 +132,7 @@ export {
   assertNotReservedRootFolderName,
   assertUniqueSiblingEntryName,
   assertUniqueSiblingFolderName,
+  assertVaultNotHydrating,
   getMarkdownStorageErrorMessage,
   resolveUniqueSiblingFolderName,
   throwStorageError,

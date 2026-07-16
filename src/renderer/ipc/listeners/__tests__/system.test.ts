@@ -23,6 +23,8 @@ async function setup(activeSpace: 'code' | 'notes' | 'http' | 'tools' | null) {
   const getNoteTags = vi.fn(async () => undefined)
   const normalizeNotesSelectionState = vi.fn(async () => undefined)
   const refreshHttpSpaceFromDisk = vi.fn(async () => undefined)
+  const storageSyncBusy = { value: false }
+  const shouldSkipStorageSyncRefresh = vi.fn(() => storageSyncBusy.value)
 
   vi.doMock('@/composables', () => ({
     initCodeSpace: vi.fn(async () => undefined),
@@ -59,6 +61,15 @@ async function setup(activeSpace: 'code' | 'notes' | 'http' | 'tools' | null) {
     useMathNotebook: () => ({
       reloadFromDisk: reloadMathFromDisk,
     }),
+    useDrawings: () => ({
+      reloadFromDisk: vi.fn(async () => undefined),
+      hasBusyDrawingUpdates: vi.fn(() => false),
+      markDrawingsStale: vi.fn(),
+    }),
+    useCloudDownloads: () => ({
+      refreshCloudDownloadStatus: vi.fn(async () => undefined),
+      setCloudDownloadStatus: vi.fn(),
+    }),
     useHttpSpaceInit: () => ({
       refreshHttpSpaceFromDisk,
     }),
@@ -70,6 +81,7 @@ async function setup(activeSpace: 'code' | 'notes' | 'http' | 'tools' | null) {
     }),
     useNotes: () => ({
       getNotes,
+      refreshSelectedNote: vi.fn(async () => undefined),
       hasBusyNoteContentUpdates: vi.fn(() => false),
     }),
     useNotesApp: () => ({
@@ -91,6 +103,7 @@ async function setup(activeSpace: 'code' | 'notes' | 'http' | 'tools' | null) {
     useSnippets: () => ({
       selectSnippet: vi.fn(),
       getSnippets,
+      refreshSelectedSnippet: vi.fn(async () => undefined),
       selectFirstSnippet: vi.fn(),
       displayedSnippets,
     }),
@@ -101,7 +114,7 @@ async function setup(activeSpace: 'code' | 'notes' | 'http' | 'tools' | null) {
       sonner: vi.fn(),
     }),
     useStorageMutation: () => ({
-      shouldSkipStorageSyncRefresh: vi.fn(() => false),
+      shouldSkipStorageSyncRefresh,
     }),
   }))
   vi.doMock('@/electron', () => ({
@@ -161,6 +174,8 @@ async function setup(activeSpace: 'code' | 'notes' | 'http' | 'tools' | null) {
     isNotesSpaceInitialized,
     normalizeCodeSelectionState,
     normalizeNotesSelectionState,
+    shouldSkipStorageSyncRefresh,
+    storageSyncBusy,
   }
 }
 
@@ -173,6 +188,26 @@ afterEach(() => {
 })
 
 describe('registerSystemListeners', () => {
+  it('paces busy retries after the max wait elapses', async () => {
+    const context = await setup('tools')
+    context.storageSyncBusy.value = true
+
+    context.ipcHandlers.get('system:storage-synced')?.(undefined)
+
+    // Дожидаемся истечения max-wait (1.5 c) в busy-состоянии.
+    await vi.advanceTimersByTimeAsync(1600)
+
+    // После max-wait busy-ретрай обязан идти с полной debounce-паузой, а не
+    // раскручивать setTimeout(0)-петлю: за 900 мс не больше трёх проверок.
+    const callsBefore = context.shouldSkipStorageSyncRefresh.mock.calls.length
+    await vi.advanceTimersByTimeAsync(900)
+    const retryCalls
+      = context.shouldSkipStorageSyncRefresh.mock.calls.length - callsBefore
+
+    expect(retryCalls).toBeGreaterThan(0)
+    expect(retryCalls).toBeLessThanOrEqual(3)
+  })
+
   it('invalidates space initialization after storage sync', async () => {
     const context = await setup('tools')
 
@@ -198,7 +233,7 @@ describe('registerSystemListeners', () => {
     expect(context.getFolders).toHaveBeenCalledTimes(1)
     expect(context.getTags).toHaveBeenCalledTimes(1)
     expect(context.normalizeCodeSelectionState).toHaveBeenCalledTimes(1)
-    expect(context.getSnippets).not.toHaveBeenCalled()
+    expect(context.getSnippets).toHaveBeenCalledTimes(1)
   })
 
   it('refreshes notes space through tags and normalized selection state', async () => {
@@ -210,7 +245,7 @@ describe('registerSystemListeners', () => {
     expect(context.getNoteFolders).toHaveBeenCalledTimes(1)
     expect(context.getNoteTags).toHaveBeenCalledTimes(1)
     expect(context.normalizeNotesSelectionState).toHaveBeenCalledTimes(1)
-    expect(context.getNotes).not.toHaveBeenCalled()
+    expect(context.getNotes).toHaveBeenCalledTimes(1)
   })
 
   it('refreshes http space from disk', async () => {

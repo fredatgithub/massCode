@@ -6,12 +6,15 @@ import {
   useHttpApp,
   useHttpEnvironments,
   useHttpRequests,
+  useSonner,
 } from '@/composables'
 import { LibraryFilter } from '@/composables/types'
 import { i18n, ipc } from '@/electron'
 import { isMac } from '@/utils'
 import { onClickOutside, useClipboard } from '@vueuse/core'
 import { format } from 'date-fns'
+import { CloudDownload } from 'lucide-vue-next'
+import { api } from '~/renderer/services/api'
 import { buildHttpPreview } from './requestPreview'
 
 interface Props {
@@ -72,6 +75,12 @@ const revealInFileManagerLabel = computed(() =>
   isMac
     ? i18n.t('action.reveal.inFinder')
     : i18n.t('action.reveal.inFileManager'),
+)
+
+// Содержимое ещё в облаке: мутации (запись файла) и копирование превью
+// недоступны до докачки; чтение метаданных и ссылки работают.
+const isCloudPending = computed(
+  () => props.request.pendingCloudDownload === true,
 )
 
 const previewVariables = computed<Record<string, string>>(() => {
@@ -161,7 +170,7 @@ async function onRestore() {
 async function onDuplicate() {
   const id = await duplicateHttpRequest(props.request.id)
   if (id) {
-    selectHttpRequest(id)
+    await selectHttpRequest(id)
     focusedRequestId.value = id
   }
 }
@@ -170,9 +179,30 @@ function onRevealInFileManager() {
   void ipc.invoke('system:show-http-request-in-file-manager', props.request.id)
 }
 
-function onCopyRequest() {
-  copy(buildHttpPreview(props.request, { variables: previewVariables.value }))
-  useDonations().incrementCopy('http')
+async function onCopyRequest() {
+  try {
+    // Список не содержит body/description: полная запись загружается по id.
+    const { data } = await api.httpRequests.getHttpRequestsById(
+      String(props.request.id),
+    )
+
+    // Свежий флаг из ответа: файл мог выгрузиться после скана, и preview
+    // скопировался бы без body.
+    if (data.pendingCloudDownload) {
+      useSonner().sonner({
+        id: 'cloud-file-not-ready',
+        message: i18n.t('messages:warning.cloudFileNotReady'),
+        type: 'warning',
+      })
+      return
+    }
+
+    copy(buildHttpPreview(data, { variables: previewVariables.value }))
+    useDonations().incrementCopy('http')
+  }
+  catch (error) {
+    console.error(error)
+  }
 }
 
 function onCopyRequestLink() {
@@ -227,7 +257,7 @@ onClickOutside(itemRef, () => {
       'is-focused': isFocused,
       'is-highlighted': isHighlighted,
     }"
-    draggable="true"
+    :draggable="!isCloudPending"
     @click="onClick"
     @contextmenu="onClickContextMenu"
     @dragstart.stop="onDragStart"
@@ -244,6 +274,11 @@ onClickOutside(itemRef, () => {
             <UiText class="title flex-1 truncate text-sm">
               {{ props.request.name }}
             </UiText>
+            <CloudDownload
+              v-if="isCloudPending"
+              class="text-muted-foreground h-3.5 w-3.5 shrink-0 self-center"
+              :aria-label="i18n.t('cloudDownloads.label')"
+            />
           </div>
           <UiText
             as="div"
@@ -270,7 +305,10 @@ onClickOutside(itemRef, () => {
       </ContextMenu.ContextMenuTrigger>
       <ContextMenu.ContextMenuContent>
         <template v-if="!isTrashLibrarySelected">
-          <ContextMenu.ContextMenuItem @click="onAddFavorites">
+          <ContextMenu.ContextMenuItem
+            :disabled="isCloudPending"
+            @click="onAddFavorites"
+          >
             {{
               isRemoveFavoritesAction
                 ? i18n.t("action.remove.fromFavorites")
@@ -282,7 +320,10 @@ onClickOutside(itemRef, () => {
         <ContextMenu.ContextMenuItem @click="onRevealInFileManager">
           {{ revealInFileManagerLabel }}
         </ContextMenu.ContextMenuItem>
-        <ContextMenu.ContextMenuItem @click="onCopyRequest">
+        <ContextMenu.ContextMenuItem
+          :disabled="isCloudPending"
+          @click="onCopyRequest"
+        >
           {{ i18n.t("action.copy.request") }}
         </ContextMenu.ContextMenuItem>
         <ContextMenu.ContextMenuItem @click="onCopyRequestLink">
@@ -290,13 +331,16 @@ onClickOutside(itemRef, () => {
         </ContextMenu.ContextMenuItem>
         <ContextMenu.ContextMenuSeparator />
         <ContextMenu.ContextMenuItem
-          :disabled="isDuplicateDisabled"
+          :disabled="isDuplicateDisabled || isCloudPending"
           @click="onDuplicate"
         >
           {{ i18n.t("action.duplicate") }}
         </ContextMenu.ContextMenuItem>
         <ContextMenu.ContextMenuSeparator />
-        <ContextMenu.ContextMenuItem @click="onDelete">
+        <ContextMenu.ContextMenuItem
+          :disabled="isCloudPending"
+          @click="onDelete"
+        >
           {{
             isTrashLibrarySelected
               ? i18n.t("action.delete.common")
@@ -305,6 +349,7 @@ onClickOutside(itemRef, () => {
         </ContextMenu.ContextMenuItem>
         <ContextMenu.ContextMenuItem
           v-if="isTrashLibrarySelected"
+          :disabled="isCloudPending"
           @click="onRestore"
         >
           {{ i18n.t("action.restore") }}

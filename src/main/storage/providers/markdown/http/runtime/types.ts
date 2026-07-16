@@ -50,9 +50,33 @@ export interface HttpFolderTreeRecord extends HttpFolderRecord {
   children: HttpFolderTreeRecord[]
 }
 
+// Денормализованные метаданные списка в .state.yaml (слой 4 плана
+// icloud-lazy-vault-load): всё, кроме body, чтобы строить записи без чтения
+// файлов (description входит: он отдаётся списком GET /http-requests).
+// mtimeMs/size — freshness-сигнатура последнего чтения: пока stat
+// совпадает, файл не перечитывается.
+export interface HttpRequestIndexMetadata {
+  auth: HttpAuth
+  bodyType: HttpBodyType
+  createdAt: number
+  description: string
+  formData: HttpFormDataEntry[]
+  headers: HttpHeaderEntry[]
+  isDeleted: number
+  isFavorites: number
+  method: HttpMethod
+  mtimeMs: number
+  name: string
+  query: HttpQueryEntry[]
+  size: number
+  updatedAt: number
+  url: string
+}
+
 export interface HttpRequestIndexItem {
   id: number
   filePath: string
+  meta?: HttpRequestIndexMetadata
 }
 
 export interface HttpRequestRecord {
@@ -73,6 +97,17 @@ export interface HttpRequestRecord {
   isDeleted: number
   createdAt: number
   updatedAt: number
+  /**
+   * Runtime-only: body и description ещё не дочитаны из файла (запись
+   * построена из индекса метаданных). Снимается ensureRequestDetailsLoaded;
+   * наружу через API не отдаётся — все выдающие потоки материализуют.
+   */
+  detailsPending?: boolean
+  /**
+   * Файл запроса — облачный плейсхолдер: содержимое ещё не скачано
+   * провайдером, запись показывается в списке и докачивается в фоне.
+   */
+  pendingCloudDownload?: boolean
 }
 
 export interface HttpEnvironmentRecord {
@@ -120,6 +155,9 @@ export interface HttpState {
   environments: HttpEnvironmentRecord[]
   activeEnvironmentId: number | null
   history: HttpHistoryRecord[]
+  // Дефолтный state на период, пока .state.yaml не докачан из облака:
+  // такой state нельзя ни персистить, ни использовать для выдачи id.
+  provisional?: boolean
 }
 
 export interface HttpPaths {

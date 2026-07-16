@@ -111,6 +111,68 @@ afterEach(() => {
 })
 
 describe('preferences store sanitization', () => {
+  it('defaults table wrapping to false', async () => {
+    const { default: preferences } = await import('../module/preferences')
+
+    expect(preferences.get('editor.notes.wrapTables' as any)).toBe(false)
+  })
+
+  it('keeps valid table wrapping and rejects invalid values', async () => {
+    persistedStateByName.preferences = {
+      editor: { notes: { wrapTables: true } },
+    }
+
+    const { default: preferences } = await import('../module/preferences')
+    expect(preferences.get('editor.notes.wrapTables' as any)).toBe(true)
+
+    vi.resetModules()
+    persistedStateByName.preferences = {
+      editor: { notes: { wrapTables: 'yes' } },
+    }
+
+    const { default: invalidPreferences } = await import(
+      '../module/preferences'
+    )
+    expect(invalidPreferences.get('editor.notes.wrapTables' as any)).toBe(
+      false,
+    )
+  })
+
+  it('defaults missing dock badge source to none', async () => {
+    const { default: preferences } = await import('../module/preferences')
+
+    expect(preferences.get('appearance.dockBadgeSource' as any)).toBe('none')
+  })
+
+  it('keeps a valid dock badge source and prunes stale appearance values', async () => {
+    persistedStateByName.preferences = {
+      appearance: {
+        theme: 'dark',
+        dockBadgeSource: 'notesInbox',
+        stale: true,
+      },
+    }
+
+    const { default: preferences } = await import('../module/preferences')
+
+    expect(preferences.get('appearance.dockBadgeSource' as any)).toBe(
+      'notesInbox',
+    )
+    expect(preferences.get('appearance.stale' as any)).toBeUndefined()
+  })
+
+  it('defaults an invalid dock badge source to none', async () => {
+    persistedStateByName.preferences = {
+      appearance: {
+        dockBadgeSource: 'invalid',
+      },
+    }
+
+    const { default: preferences } = await import('../module/preferences')
+
+    expect(preferences.get('appearance.dockBadgeSource' as any)).toBe('none')
+  })
+
   it('migrates legacy keys into grouped preferences schema and prunes stale values', async () => {
     persistedStateByName.preferences = {
       storagePath: '/custom-storage',

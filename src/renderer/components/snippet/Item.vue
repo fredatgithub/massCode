@@ -12,6 +12,7 @@ import { i18n, ipc } from '@/electron'
 import { isMac } from '@/utils'
 import { useClipboard } from '@vueuse/core'
 import { format } from 'date-fns'
+import { CloudDownload } from 'lucide-vue-next'
 import { api } from '~/renderer/services/api'
 
 interface Props {
@@ -71,6 +72,12 @@ const revealInFileManagerLabel = computed(() =>
   isMac
     ? i18n.t('action.reveal.inFinder')
     : i18n.t('action.reveal.inFileManager'),
+)
+
+// Содержимое ещё в облаке: мутации (запись файла) и копирование тела
+// недоступны до докачки; чтение метаданных и ссылки работают.
+const isCloudPending = computed(
+  () => props.snippet.pendingCloudDownload === true,
 )
 
 const folderName = computed(() => {
@@ -219,7 +226,7 @@ function onDragStart(event: DragEvent) {
       'is-focused': isFocused,
       'is-highlighted': isHighlighted,
     }"
-    draggable="true"
+    :draggable="!isCloudPending"
     @click="(event) => onSnippetClick(snippet.id, event)"
     @contextmenu="onClickContextMenu"
     @dragstart.stop="onDragStart"
@@ -235,10 +242,19 @@ function onDragStart(event: DragEvent) {
           "
         >
           <div
-            class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+            class="flex min-w-0 items-center gap-1.5"
             :class="isCompactListMode ? 'flex-1' : 'mb-2'"
           >
-            {{ snippet.name || i18n.t("snippet.untitled") }}
+            <span
+              class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+            >
+              {{ snippet.name || i18n.t("snippet.untitled") }}
+            </span>
+            <CloudDownload
+              v-if="snippet.pendingCloudDownload"
+              class="text-muted-foreground h-3.5 w-3.5 shrink-0"
+              :aria-label="i18n.t('cloudDownloads.label')"
+            />
           </div>
           <UiText
             v-if="isCompactListMode"
@@ -267,7 +283,10 @@ function onDragStart(event: DragEvent) {
       </ContextMenu.ContextMenuTrigger>
       <ContextMenu.ContextMenuContent>
         <template v-if="!isTrashLibrarySelectd">
-          <ContextMenu.ContextMenuItem @click="onAddFavorites">
+          <ContextMenu.ContextMenuItem
+            :disabled="isCloudPending"
+            @click="onAddFavorites"
+          >
             {{
               isFavoritesLibrarySelected
                 ? i18n.t("action.remove.fromFavorites")
@@ -278,7 +297,10 @@ function onDragStart(event: DragEvent) {
           <ContextMenu.ContextMenuItem @click="onRevealInFileManager">
             {{ revealInFileManagerLabel }}
           </ContextMenu.ContextMenuItem>
-          <ContextMenu.ContextMenuItem @click="onCopySnippetContent">
+          <ContextMenu.ContextMenuItem
+            :disabled="isCloudPending"
+            @click="onCopySnippetContent"
+          >
             {{ i18n.t("action.copy.snippet") }}
           </ContextMenu.ContextMenuItem>
           <ContextMenu.ContextMenuItem @click="onCopySnippetLink">
@@ -286,13 +308,16 @@ function onDragStart(event: DragEvent) {
           </ContextMenu.ContextMenuItem>
           <ContextMenu.ContextMenuSeparator />
           <ContextMenu.ContextMenuItem
-            :disabled="isDuplicateDisabled"
+            :disabled="isDuplicateDisabled || isCloudPending"
             @click="onDuplicate"
           >
             {{ i18n.t("action.duplicate") }}
           </ContextMenu.ContextMenuItem>
         </template>
-        <ContextMenu.ContextMenuItem @click="onDelete">
+        <ContextMenu.ContextMenuItem
+          :disabled="isCloudPending"
+          @click="onDelete"
+        >
           {{
             state.libraryFilter === LibraryFilter.Trash
               ? i18n.t("action.delete.common")
@@ -301,6 +326,7 @@ function onDragStart(event: DragEvent) {
         </ContextMenu.ContextMenuItem>
         <ContextMenu.ContextMenuItem
           v-if="isTrashLibrarySelectd"
+          :disabled="isCloudPending"
           @click="onRestore"
         >
           {{ i18n.t("action.restore") }}

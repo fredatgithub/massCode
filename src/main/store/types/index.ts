@@ -134,6 +134,8 @@ export interface AppStore {
     contentSort: ContentSortState
     route: NotesRouteName
     editorMode: NotesEditorMode
+    hideCompletedTasksInFolders: boolean
+    lastTasksCleanupAt: number
     dashboard: {
       widgets: NotesDashboardWidgets
     }
@@ -213,6 +215,7 @@ export interface NotesEditorSettings {
   codeFontFamily: string
   lineHeight: number
   limitWidth: boolean
+  wrapTables: boolean
   lineNumbers: boolean
   indentSize: number
 }
@@ -234,9 +237,17 @@ export interface UpdatesSettings {
   autoUpdate: boolean
 }
 
+export type TasksAutoCleanupInterval = 'never' | '1d' | '7d' | '30d'
+export type DockBadgeSource = 'none' | 'codeInbox' | 'notesInbox' | 'tasksDue'
+
+export interface TasksSettings {
+  autoCleanupCompleted: TasksAutoCleanupInterval
+}
+
 export interface PreferencesStore {
   appearance: {
     theme: string
+    dockBadgeSource: DockBadgeSource
   }
   updates: UpdatesSettings
   localization: {
@@ -260,6 +271,7 @@ export interface PreferencesStore {
   }
   math: MathSettings
   http: HttpSettings
+  tasks: TasksSettings
 }
 
 export interface MathSheet {
