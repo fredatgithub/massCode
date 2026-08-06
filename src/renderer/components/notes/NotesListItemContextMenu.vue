@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import type {
+  NoteExportFormat,
+  NoteExportPayload,
+  NoteExportResponse,
+} from '~/main/types/ipc'
 import * as ContextMenu from '@/components/ui/shadcn/context-menu'
 import {
   isTaskNote,
@@ -7,12 +12,14 @@ import {
   useDonations,
   useNotes,
   useNotesApp,
+  useSonner,
 } from '@/composables'
 import { LibraryFilter } from '@/composables/types'
 import { i18n, ipc } from '@/electron'
 import { isMac } from '@/utils'
 import { useClipboard } from '@vueuse/core'
 import { api } from '~/renderer/services/api'
+import { renderDrawingPreviewsFromMarkdown } from './drawingExport'
 
 interface NoteTagInfo {
   id: number
@@ -55,10 +62,12 @@ const {
   deleteSelectedNotes,
   duplicateNote,
   selectNote,
+  selectedNote,
 } = useNotes()
 
 const { copy } = useClipboard()
 const { confirm } = useDialog()
+const { sonner } = useSonner()
 
 const isFavoritesLibrarySelected = computed(
   () => notesState.libraryFilter === LibraryFilter.Favorites,
@@ -146,6 +155,70 @@ async function onCopyNoteContent() {
   }
 }
 
+function showCloudFileNotReadyWarning() {
+  sonner({
+    message: i18n.t('messages:warning.cloudFileNotReady'),
+    type: 'warning',
+  })
+}
+
+async function onExport(format: NoteExportFormat) {
+  try {
+    let content: string
+    if (selectedNote.value?.id === props.note.id) {
+      if (selectedNote.value.pendingCloudDownload) {
+        showCloudFileNotReadyWarning()
+        return
+      }
+
+      if (typeof selectedNote.value.content === 'string') {
+        content = selectedNote.value.content
+      }
+      else {
+        const { data } = await api.notes.getNotesById(String(props.note.id))
+        if (data.pendingCloudDownload) {
+          showCloudFileNotReadyWarning()
+          return
+        }
+        content = data.content
+      }
+    }
+    else {
+      const { data } = await api.notes.getNotesById(String(props.note.id))
+      if (data.pendingCloudDownload) {
+        showCloudFileNotReadyWarning()
+        return
+      }
+      content = data.content
+    }
+
+    const drawingPreviews = await renderDrawingPreviewsFromMarkdown(content)
+    const result = await ipc.invoke<NoteExportPayload, NoteExportResponse>(
+      'fs:export-note',
+      {
+        content,
+        drawingPreviews,
+        format,
+        name: props.note.name,
+      },
+    )
+
+    if (!result.canceled) {
+      sonner({
+        message: i18n.t('messages:success.noteExported'),
+        type: 'success',
+      })
+    }
+  }
+  catch (error) {
+    console.error(error)
+    sonner({
+      message: i18n.t('messages:error.noteExportFailed'),
+      type: 'error',
+    })
+  }
+}
+
 async function onConvertToTask() {
   await updateNoteProperties(props.note.id, {
     properties: {
@@ -213,6 +286,19 @@ async function onConvertToNote() {
     </ContextMenu.ContextMenuItem>
     <ContextMenu.ContextMenuItem @click="onCopyNoteLink">
       {{ i18n.t("action.copy.noteLink") }}
+    </ContextMenu.ContextMenuItem>
+    <ContextMenu.ContextMenuSeparator />
+    <ContextMenu.ContextMenuItem
+      :disabled="isCloudPending || selectedNoteIds.length > 1"
+      @click="onExport('html')"
+    >
+      {{ i18n.t("action.export.toHtml") }}
+    </ContextMenu.ContextMenuItem>
+    <ContextMenu.ContextMenuItem
+      :disabled="isCloudPending || selectedNoteIds.length > 1"
+      @click="onExport('pdf')"
+    >
+      {{ i18n.t("action.export.toPdf") }}
     </ContextMenu.ContextMenuItem>
     <ContextMenu.ContextMenuSeparator />
     <ContextMenu.ContextMenuItem

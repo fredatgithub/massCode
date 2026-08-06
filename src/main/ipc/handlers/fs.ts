@@ -1,4 +1,9 @@
-import type { ImportMarkdownFolderResponse } from '../../types/ipc'
+import type {
+  ImportMarkdownFolderResponse,
+  NoteExportResponse,
+  NoteFolderSiteExportPrepareResponse,
+  NoteFolderSiteExportResponse,
+} from '../../types/ipc'
 import { Buffer } from 'node:buffer'
 import { randomBytes } from 'node:crypto'
 import { extname, join, parse, relative } from 'node:path'
@@ -18,6 +23,13 @@ import {
   setFolderIcon,
   writeFolderIcon,
 } from '../../folderIcons'
+import { exportNote, parseNoteExportPayload } from '../../notesExport'
+import {
+  exportNoteFolderSite,
+  parseNoteFolderSiteExportPayload,
+  parseNoteFolderSiteExportPreparePayload,
+  prepareNoteFolderSiteExport,
+} from '../../notesFolderSiteExport'
 import {
   getNotesPaths,
   parseNotesAssetWritePayload,
@@ -107,6 +119,40 @@ async function readMarkdownFolder(
 }
 
 export function registerFsHandlers() {
+  ipcMain.handle('fs:export-note', async (_, payload: unknown) => {
+    const parsedPayload = parseNoteExportPayload(payload)
+    if (!parsedPayload) {
+      throw new TypeError('Invalid note export payload')
+    }
+
+    return exportNote(parsedPayload) satisfies Promise<NoteExportResponse>
+  })
+
+  ipcMain.handle(
+    'fs:prepare-note-folder-site-export',
+    (_, payload: unknown) => {
+      const parsedPayload = parseNoteFolderSiteExportPreparePayload(payload)
+      if (!parsedPayload) {
+        throw new TypeError('Invalid Notes folder site export payload')
+      }
+
+      return prepareNoteFolderSiteExport(
+        parsedPayload,
+      ) satisfies NoteFolderSiteExportPrepareResponse
+    },
+  )
+
+  ipcMain.handle('fs:export-note-folder-site', async (_, payload: unknown) => {
+    const parsedPayload = parseNoteFolderSiteExportPayload(payload)
+    if (!parsedPayload) {
+      throw new TypeError('Invalid Notes folder site export payload')
+    }
+
+    return exportNoteFolderSite(
+      parsedPayload,
+    ) satisfies Promise<NoteFolderSiteExportResponse>
+  })
+
   ipcMain.handle('fs:folder-icon:write', async (_, payload: unknown) => {
     const parsedPayload = parseFolderIconWritePayload(payload)
     if (!parsedPayload)

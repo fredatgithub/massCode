@@ -74,6 +74,9 @@ type SystemAction =
 type PrettierAction = 'format'
 type FsAction =
   | 'assets'
+  | 'export-note'
+  | 'export-note-folder-site'
+  | 'prepare-note-folder-site-export'
   | 'folder-icon:set'
   | 'folder-icon:write'
   | 'import-markdown-folder'
@@ -83,6 +86,11 @@ type SpacesAction =
   | 'math:read'
   | 'math:write'
   | 'http:execute'
+  | 'http:secrets-status'
+  | 'http:set-secret'
+  | 'http:delete-secret'
+  | 'http:reveal-secret'
+  | 'http:unprotect-secret'
   | 'drawings:list'
   | 'drawings:read'
   | 'drawings:write'
@@ -154,3 +162,60 @@ export interface ImportMarkdownFolderResponse {
   files: ImportMarkdownFolderFile[]
   warnings: ImportMarkdownFolderWarning[]
 }
+
+export type NoteExportFormat = 'html' | 'pdf'
+
+export interface NoteExportDrawingPreview {
+  id: string
+  svg: string
+}
+
+export interface NoteExportPayload {
+  content: string
+  drawingPreviews?: NoteExportDrawingPreview[]
+  format: NoteExportFormat
+  name: string
+}
+
+export interface NoteExportResponse {
+  canceled: boolean
+  filePath?: string
+}
+
+export type NoteFolderSiteExportSort = 'createdAt' | 'updatedAt' | 'name'
+export type NoteFolderSiteExportOrder = 'ASC' | 'DESC'
+
+export interface NoteFolderSiteExportPreparePayload {
+  folderId: number
+}
+
+export type NoteFolderSiteExportPrepareResponse =
+  | {
+    drawingIds: string[]
+    status: 'ready'
+  }
+  | {
+    status: 'cloud-unavailable'
+  }
+
+export interface NoteFolderSiteExportPayload {
+  drawingPreviews: NoteExportDrawingPreview[]
+  folderId: number
+  order: NoteFolderSiteExportOrder
+  sort: NoteFolderSiteExportSort
+}
+
+export type NoteFolderSiteExportResponse =
+  | {
+    canceled: false
+    directoryPath: string
+    status: 'exported'
+  }
+  | {
+    canceled: true
+    status: 'canceled'
+  }
+  | {
+    canceled: false
+    status: 'cloud-unavailable'
+  }
