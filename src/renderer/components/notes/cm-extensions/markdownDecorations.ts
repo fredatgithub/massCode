@@ -298,12 +298,14 @@ interface MarkdownDecorationsUpdateFlags {
 
 export function shouldRebuildMarkdownDecorations(
   update: MarkdownDecorationsUpdateFlags,
+  treeChanged = false,
 ): boolean {
   return (
     update.docChanged
     || update.viewportChanged
     || update.selectionSet
     || update.focusChanged
+    || treeChanged
   )
 }
 
@@ -516,7 +518,10 @@ function buildDecorations(
 
             decorations.push(
               Decoration.line({
-                attributes: { style },
+                attributes: {
+                  class: 'cm-fenced-code-line',
+                  style,
+                },
               }).range(line.from),
             )
           }
@@ -697,7 +702,10 @@ export function createMarkdownDecorations(
         view: EditorView
       }) {
         if (
-          shouldRebuildMarkdownDecorations(update)
+          shouldRebuildMarkdownDecorations(
+            update,
+            syntaxTree(update.startState) !== syntaxTree(update.state),
+          )
           || revealSelectionChanged(update)
         ) {
           this.decorations = buildDecorations(
