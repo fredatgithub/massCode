@@ -18,6 +18,7 @@ import {
 } from 'electron'
 import i18n from '../i18n'
 import { send } from '../ipc'
+import { requestLifecycleAction } from '../lifecycle'
 import { checkForUpdatesFromMenu } from '../updates'
 import { createMenu, createPlatformMenuItems } from './utils'
 
@@ -233,36 +234,47 @@ const helpMenuItems: MenuConfig[] = [
 if (isDev) {
   helpMenuItems.push({
     label: 'Reload',
-    role: 'reload',
+    accelerator: 'CommandOrControl+R',
+    click: () =>
+      requestLifecycleAction(() => {
+        BrowserWindow.getFocusedWindow()?.webContents.reload()
+      }, false),
   })
 }
 
 const editMenuItems: MenuConfig[] = [
   {
+    label: i18n.t('menu:edit.undo'),
     role: 'undo',
   },
   {
+    label: i18n.t('menu:edit.redo'),
     role: 'redo',
   },
   {
     type: 'separator',
   },
   {
+    label: i18n.t('menu:edit.cut'),
     role: 'cut',
   },
   {
+    label: i18n.t('menu:edit.copy'),
     role: 'copy',
   },
   {
+    label: i18n.t('menu:edit.paste'),
     role: 'paste',
   },
   {
+    label: i18n.t('menu:edit.delete'),
     role: 'delete',
   },
   {
     type: 'separator',
   },
   {
+    label: i18n.t('menu:edit.selectAll'),
     role: 'selectAll',
   },
   {
@@ -274,6 +286,25 @@ const editMenuItems: MenuConfig[] = [
     click: () => send('main-menu:find'),
   },
 ]
+
+function createWindowMenuItems(): MenuItemConstructorOptions[] {
+  return [
+    {
+      label: i18n.t('menu:window.minimize'),
+      role: 'minimize',
+    },
+    {
+      label: i18n.t('menu:window.zoom'),
+      role: 'zoom',
+    },
+    ...(process.platform === 'darwin'
+      ? [
+          { type: 'separator' as const },
+          { label: i18n.t('menu:window.front'), role: 'front' as const },
+        ]
+      : [{ label: i18n.t('menu:window.close'), role: 'close' as const }]),
+  ]
+}
 
 function getPrimaryActionLabel(action: MainMenuPrimaryAction) {
   if (action === 'new-snippet')
@@ -654,6 +685,7 @@ function createMainMenuTemplate(
       submenu: createPlatformMenuItems(appMenuItems),
     },
     {
+      label: i18n.t('menu:edit.label'),
       role: 'editMenu',
       submenu: createPlatformMenuItems(editMenuItems),
     },
@@ -662,7 +694,9 @@ function createMainMenuTemplate(
       submenu: createPlatformMenuItems(historyMenuItems),
     },
     {
+      label: i18n.t('menu:window.label'),
       role: 'windowMenu',
+      submenu: createWindowMenuItems(),
     },
     {
       label: i18n.t('menu:help.label'),
