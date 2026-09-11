@@ -9,7 +9,13 @@ import type {
 } from '../types'
 import { homedir, platform } from 'node:os'
 import Store from 'electron-store'
+import { DATE_FORMATS, DEFAULT_DATE_FORMAT } from '../../../shared/dateFormat'
+import {
+  HTTP_HISTORY_DEFAULT_LIMIT,
+  HTTP_HISTORY_LIMITS,
+} from '../../../shared/httpHistory'
 import { HTTP_PREVIEW_FORMATS } from '../../../shared/httpPreview'
+import { httpTransportSchema } from '../../../shared/httpTransport'
 import { EDITOR_DEFAULTS, NOTES_EDITOR_DEFAULTS } from '../constants'
 import {
   asRecord,
@@ -31,6 +37,7 @@ const MATH_DEFAULTS: MathSettings = {
 }
 
 const HTTP_DEFAULTS: HttpSettings = {
+  historyLimit: HTTP_HISTORY_DEFAULT_LIMIT,
   wrapLines: true,
   defaultPreviewFormat: 'http',
   autoSwitchToResponse: true,
@@ -51,6 +58,7 @@ const PREFERENCES_DEFAULTS: PreferencesStore = {
   appearance: {
     theme: 'auto',
     dockBadgeSource: 'none',
+    dateFormat: DEFAULT_DATE_FORMAT,
   },
   updates: {
     autoUpdate: true,
@@ -229,6 +237,10 @@ function sanitizeHttpSettings(value: unknown): HttpSettings {
   const source = asRecord(value)
 
   return {
+    transport: httpTransportSchema.catch({}).parse(source.transport ?? {}),
+    historyLimit: HTTP_HISTORY_LIMITS.includes(source.historyLimit as 20)
+      ? (source.historyLimit as number)
+      : HTTP_HISTORY_DEFAULT_LIMIT,
     wrapLines:
       typeof source.wrapLines === 'boolean'
         ? source.wrapLines
@@ -292,6 +304,12 @@ function sanitizePreferences(value: unknown): PreferencesStore {
         appearanceSource,
         'theme',
         readString(source, 'theme', PREFERENCES_DEFAULTS.appearance.theme),
+      ),
+      dateFormat: readEnum(
+        appearanceSource,
+        'dateFormat',
+        DATE_FORMATS,
+        DEFAULT_DATE_FORMAT,
       ),
       dockBadgeSource: readEnum(
         appearanceSource,

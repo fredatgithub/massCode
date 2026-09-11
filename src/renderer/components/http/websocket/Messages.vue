@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { useHttpWebSocket } from '@/composables/spaces/http/useHttpWebSocket'
+import { useDateFormat } from '@/composables/useDateFormat'
 import { i18n } from '@/electron'
 import { ArrowDownLeft, ArrowUpRight, Trash2 } from 'lucide-vue-next'
+
+const { formatTime } = useDateFormat()
 
 const { view, error, clear } = useHttpWebSocket()
 const log = useTemplateRef<HTMLElement>('log')
@@ -52,18 +55,17 @@ function onScroll() {
         <Trash2 class="size-4" />
       </UiActionButton>
     </div>
-    <UiText
+    <UiAlert
       v-if="error || view?.error"
-      variant="xs"
-      class="text-destructive border-b px-3 py-2"
-      role="alert"
+      variant="error"
+      layout="panel"
     >
       {{
         i18n.t(`spaces.http.websocket.errors.${error ?? view?.error}`, {
           status: view?.handshakeStatus,
         })
       }}
-    </UiText>
+    </UiAlert>
     <UiText
       variant="caption"
       muted
@@ -117,7 +119,7 @@ function onScroll() {
             muted
             class="flex-1"
           >
-            {{ new Date(item.time).toLocaleTimeString() }}
+            {{ formatTime(item.time) }}
           </UiText>
           <UiText
             variant="caption"

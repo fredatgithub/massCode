@@ -112,6 +112,24 @@ afterEach(() => {
 })
 
 describe('preferences store sanitization', () => {
+  it.each(['locale', 'dd.MM.yyyy', 'MM/dd/yyyy', 'dd/MM/yyyy', 'yyyy-MM-dd'])(
+    'keeps saved date format %s',
+    async (dateFormat) => {
+      persistedStateByName.preferences = { appearance: { dateFormat } }
+      const { default: preferences } = await import('../module/preferences')
+      expect(preferences.get('appearance.dateFormat' as any)).toBe(dateFormat)
+    },
+  )
+
+  it.each([undefined, null, 'invalid', 42])(
+    'defaults missing or invalid date format %s to locale',
+    async (dateFormat) => {
+      persistedStateByName.preferences = { appearance: { dateFormat } }
+      const { default: preferences } = await import('../module/preferences')
+      expect(preferences.get('appearance.dateFormat' as any)).toBe('locale')
+    },
+  )
+
   it('defaults table wrapping to false', async () => {
     const { default: preferences } = await import('../module/preferences')
 
@@ -555,6 +573,7 @@ describe('app store sanitization', () => {
   it('keeps persisted http layout values', async () => {
     persistedStateByName.app = {
       http: {
+        selection: { activePanel: 'folder', folderId: 3, requestId: 7 },
         contentSort: {
           sort: 'updatedAt',
           order: 'ASC',
@@ -562,6 +581,13 @@ describe('app store sanitization', () => {
         },
         layout: {
           mode: 'list-editor',
+          treeWidth: 284,
+          collectionsOpen: false,
+          environmentsOpen: false,
+          trashOpen: true,
+          unfiledOpen: false,
+          favoritesOnly: true,
+          trashHeight: 140,
           environmentsListHeight: 180,
           threePanel: [20, 30],
           twoPanel: 35,
@@ -573,6 +599,18 @@ describe('app store sanitization', () => {
 
     const { default: app } = await import('../module/app')
 
+    expect(app.get('http.selection' as any)).toEqual({
+      activePanel: 'folder',
+      folderId: 3,
+      requestId: 7,
+    })
+    expect(app.get('http.layout.treeWidth' as any)).toBe(284)
+    expect(app.get('http.layout.collectionsOpen' as any)).toBe(false)
+    expect(app.get('http.layout.environmentsOpen' as any)).toBe(false)
+    expect(app.get('http.layout.trashOpen' as any)).toBe(true)
+    expect(app.get('http.layout.unfiledOpen' as any)).toBe(false)
+    expect(app.get('http.layout.favoritesOnly' as any)).toBe(true)
+    expect(app.get('http.layout.trashHeight' as any)).toBe(140)
     expect(app.get('http.layout.mode' as any)).toBe('list-editor')
     expect(app.get('http.contentSort' as any)).toEqual({
       sort: 'updatedAt',
