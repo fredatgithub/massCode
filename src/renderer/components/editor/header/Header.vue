@@ -15,8 +15,6 @@ import {
   Code,
   Image,
   Network,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Type,
 } from 'lucide-vue-next'
@@ -46,6 +44,7 @@ const {
   isShowCodeImage,
   isShowJsonVisualizer,
   isSidebarHidden,
+  toggleCodeSidebar,
 } = useApp()
 const { addToUpdateQueue } = useSnippetUpdate()
 
@@ -91,11 +90,7 @@ const {
     }
 
     addToUpdateQueue(selectedSnippet.value.id, {
-      name: v,
-      description: selectedSnippet.value.description,
-      folderId: selectedSnippet.value.folder?.id || null,
-      isDeleted: selectedSnippet.value.isDeleted,
-      isFavorites: selectedSnippet.value.isFavorites,
+      name: v.trim(),
     })
   },
 )
@@ -268,6 +263,7 @@ function onAddFragment() {
               v-model="name"
               variant="ghost"
               class="w-full truncate px-0"
+              :data-planned-title="`snippet:${displayedSnippet?.id}`"
               :select="isFocusedSnippetName"
               @focus="onSnippetNameFocus"
               @blur="onNameBlur"
@@ -277,24 +273,6 @@ function onAddFragment() {
         </div>
       </div>
       <div class="ml-2 flex">
-        <UiActionButton
-          class="mr-1"
-          :tooltip="
-            isSidebarHidden
-              ? i18n.t('action.showSidebar')
-              : i18n.t('action.hideSidebar')
-          "
-          @click="isSidebarHidden = !isSidebarHidden"
-        >
-          <PanelLeftOpen
-            v-if="isSidebarHidden"
-            class="h-3 w-3"
-          />
-          <PanelLeftClose
-            v-else
-            class="h-3 w-3"
-          />
-        </UiActionButton>
         <UiActionButton
           :tooltip="i18n.t('menu:editor.previewScreenshot')"
           :active="isShowCodeImage"
@@ -333,6 +311,20 @@ function onAddFragment() {
           @click="onAddFragment"
         >
           <Plus class="h-4 w-4" />
+        </UiActionButton>
+        <UiActionButton
+          :tooltip="
+            isSidebarHidden
+              ? i18n.t('action.showSidebar')
+              : i18n.t('action.hideSidebar')
+          "
+          :active="isSidebarHidden"
+          @click="toggleCodeSidebar"
+        >
+          <UiPanelIcon
+            side="left"
+            :open="!isSidebarHidden"
+          />
         </UiActionButton>
       </div>
     </div>

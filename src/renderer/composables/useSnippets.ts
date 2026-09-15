@@ -531,8 +531,10 @@ async function updateSnippet(snippetId: number, data: SnippetsUpdate) {
     return
   }
 
-  // Переименование/описание не меняют состав списка — обновляем точечно.
+  // Полную запись обновляем без loading, чтобы не сбрасывать фокус редактора.
   patchSnippetInCollections(snippetId, data)
+  // Название/описание влияют на поиск, а сохранение — на порядок updatedAt.
+  await getSnippets()
 }
 
 async function updateSnippets(snippetIds: number[], data: SnippetsUpdate[]) {
@@ -838,7 +840,7 @@ async function search() {
   }
 }
 
-function selectSearchSnippet(index: number) {
+async function selectSearchSnippet(index: number) {
   if (
     !displayedSnippets.value
     || index < 0
@@ -848,8 +850,13 @@ function selectSearchSnippet(index: number) {
   }
 
   const snippet = displayedSnippets.value[index]
-  selectSnippet(snippet.id)
   searchSelectedIndex.value = index
+  const { useNavigationHistory } = await import(
+    '@/composables/useNavigationHistory'
+  )
+  await useNavigationHistory().recordNavigation(() =>
+    selectSnippet(snippet.id),
+  )
   nextTick(() => scrollToSnippetIndex(index))
 }
 
