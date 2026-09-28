@@ -6,6 +6,8 @@ import {
   useSnippets,
   useSnippetUpdate,
 } from '@/composables'
+import { useAi } from '@/composables/ai/useAi'
+import { useSpacePanels } from '@/composables/useSpacePanels'
 import { i18n } from '@/electron'
 import { navigateBack, navigateForward } from '@/ipc/listeners/deepLinks'
 import { getEntryNameConflictMessage } from '@/utils'
@@ -15,7 +17,6 @@ import {
   Code,
   Image,
   Network,
-  Plus,
   Type,
 } from 'lucide-vue-next'
 import {
@@ -27,19 +28,21 @@ const emit = defineEmits<{
   focusEditor: []
 }>()
 
+const { toggleSecondary } = useSpacePanels()
+
+const { open: isAiOpen } = useAi()
+
 const {
   displayedSnippet,
   displayedSnippetContent,
   displayedSnippets,
   selectedSnippet,
   selectedSnippetRecordStatus,
-  addFragment,
   isAvailableToCodePreview,
 } = useSnippets()
 const { canGoBack, canGoForward } = useNavigationHistory()
 const {
   isFocusedSnippetName,
-  state,
   isShowCodePreview,
   isShowCodeImage,
   isShowJsonVisualizer,
@@ -187,10 +190,6 @@ const isShowTags = computed(() => {
 
 const isHistoryVisible = computed(() => canGoBack.value || canGoForward.value)
 
-function onClickTab(index: number) {
-  state.snippetContentIndex = index
-}
-
 function onBackClick() {
   void navigateBack()
 }
@@ -216,21 +215,13 @@ function onJsonVisualizerToggle() {
   isShowCodePreview.value = false
   isShowCodeImage.value = false
 }
-
-function onAddFragment() {
-  if (
-    selectedSnippetRecordStatus.value !== 'ready'
-    || selectedSnippet.value?.id !== displayedSnippet.value?.id
-  ) {
-    return
-  }
-
-  void addFragment()
-}
 </script>
 
 <template>
-  <div data-editor-header>
+  <div
+    data-editor-header
+    class="min-w-0"
+  >
     <div
       class="border-border grid grid-cols-[1fr_auto] items-center border-b px-2 pb-1"
     >
@@ -242,6 +233,7 @@ function onAddFragment() {
           <UiActionButton
             :disabled="!canGoBack"
             :tooltip="i18n.t('menu:history.back')"
+            shortcut="CommandOrControl+["
             @click="onBackClick"
           >
             <ChevronLeft class="h-3 w-3" />
@@ -249,6 +241,7 @@ function onAddFragment() {
           <UiActionButton
             :disabled="!canGoForward"
             :tooltip="i18n.t('menu:history.forward')"
+            shortcut="CommandOrControl+]"
             @click="onForwardClick"
           >
             <ChevronRight class="h-3 w-3" />
@@ -287,6 +280,7 @@ function onAddFragment() {
               ? `${i18n.t('action.hide')} ${i18n.t('menu:editor.previewCode')}`
               : i18n.t('menu:editor.previewCode')
           "
+          shortcut="Alt+CommandOrControl+P"
           :active="isShowCodePreview"
           @click="onCodePreviewToggle"
         >
@@ -295,6 +289,7 @@ function onAddFragment() {
         <UiActionButton
           v-if="isShowJsonVisualizerAction"
           :tooltip="i18n.t('menu:editor.previewJson')"
+          shortcut="Alt+CommandOrControl+J"
           :active="isShowJsonVisualizer"
           @click="onJsonVisualizerToggle"
         >
@@ -307,17 +302,12 @@ function onAddFragment() {
           <Type class="h-3 w-3" />
         </UiActionButton>
         <UiActionButton
-          :tooltip="i18n.t('action.new.fragment')"
-          @click="onAddFragment"
-        >
-          <Plus class="h-4 w-4" />
-        </UiActionButton>
-        <UiActionButton
           :tooltip="
             isSidebarHidden
               ? i18n.t('action.showSidebar')
               : i18n.t('action.hideSidebar')
           "
+          shortcut="CommandOrControl+B"
           :active="isSidebarHidden"
           @click="toggleCodeSidebar"
         >
@@ -326,25 +316,26 @@ function onAddFragment() {
             :open="!isSidebarHidden"
           />
         </UiActionButton>
+        <UiActionButton
+          :tooltip="
+            i18n.t(
+              isAiOpen
+                ? 'action.hideSecondarySidebar'
+                : 'action.showSecondarySidebar',
+            )
+          "
+          shortcut="Alt+CommandOrControl+B"
+          :active="isAiOpen"
+          @click="toggleSecondary"
+        >
+          <UiPanelIcon
+            side="right"
+            :open="isAiOpen"
+          />
+        </UiActionButton>
       </div>
     </div>
-    <div
-      v-if="displayedSnippet?.contents && displayedSnippet.contents.length > 1"
-      class="border-border grid auto-cols-fr grid-flow-col border-b"
-    >
-      <EditorTab
-        v-for="(i, index) in displayedSnippet?.contents"
-        :id="i.id"
-        :key="i.id"
-        :index="index"
-        :name="i.label"
-        :class="{
-          'bg-accent text-accent-foreground':
-            displayedSnippetContent?.id === i.id,
-        }"
-        @click="onClickTab(index)"
-      />
-    </div>
+    <EditorHeaderFragments :key="displayedSnippet?.id" />
     <EditorDescription v-model:show="isShowDescription" />
     <div
       v-if="isShowTags"

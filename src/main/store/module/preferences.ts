@@ -9,6 +9,10 @@ import type {
 } from '../types'
 import { homedir, platform } from 'node:os'
 import Store from 'electron-store'
+import {
+  AI_PROMPT_HISTORY_DEFAULT_LIMIT,
+  AI_PROMPT_HISTORY_LIMITS,
+} from '../../../shared/aiPromptHistory'
 import { DATE_FORMATS, DEFAULT_DATE_FORMAT } from '../../../shared/dateFormat'
 import {
   HTTP_HISTORY_DEFAULT_LIMIT,
@@ -55,6 +59,7 @@ const API_INTEGRATIONS_DEFAULTS: PreferencesStore['api']['integrations'] = {
 }
 
 const PREFERENCES_DEFAULTS: PreferencesStore = {
+  aiPromptHistoryLimit: AI_PROMPT_HISTORY_DEFAULT_LIMIT,
   appearance: {
     theme: 'auto',
     dockBadgeSource: 'none',
@@ -74,7 +79,6 @@ const PREFERENCES_DEFAULTS: PreferencesStore = {
   storage: {
     rootPath: storagePath,
     vaultPath: null,
-    sqliteMigrated: false,
   },
   editor: {
     code: EDITOR_DEFAULTS,
@@ -300,6 +304,11 @@ function sanitizePreferences(value: unknown): PreferencesStore {
   const tasksSource = asRecord(source.tasks)
 
   return {
+    aiPromptHistoryLimit: AI_PROMPT_HISTORY_LIMITS.includes(
+      source.aiPromptHistoryLimit as 20,
+    )
+      ? (source.aiPromptHistoryLimit as number)
+      : AI_PROMPT_HISTORY_DEFAULT_LIMIT,
     appearance: {
       theme: readString(
         appearanceSource,
@@ -360,10 +369,6 @@ function sanitizePreferences(value: unknown): PreferencesStore {
         'vaultPath',
         PREFERENCES_DEFAULTS.storage.vaultPath,
       ),
-      sqliteMigrated:
-        typeof storageSource.sqliteMigrated === 'boolean'
-          ? storageSource.sqliteMigrated
-          : PREFERENCES_DEFAULTS.storage.sqliteMigrated,
     },
     editor: {
       code: sanitizeCodeEditorSettings(codeEditorSource),

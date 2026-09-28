@@ -5,6 +5,7 @@ import {
   useHttpRequests,
   useNavigationHistory,
 } from '@/composables'
+import { useNativeHttpPanelBridge } from '@/composables/ai/nativeBridges'
 import { useHttpRuntime } from '@/composables/spaces/http/useHttpRuntime'
 import { useHttpUi } from '@/composables/spaces/http/useHttpUi'
 import { useHttpWebSocket } from '@/composables/spaces/http/useHttpWebSocket'
@@ -45,6 +46,32 @@ const activeTab = ref<
   | 'variables'
   | 'scripts'
 >('params')
+
+useNativeHttpPanelBridge('httpRequest', async (action, current) => {
+  const available = isWebSocket.value
+    ? ['settings', 'message', 'params', 'headers', 'auth', 'description']
+    : [
+        'settings',
+        'params',
+        'headers',
+        'body',
+        'auth',
+        'description',
+        'assertions',
+        'variables',
+        'scripts',
+      ]
+  if (!current())
+    return { status: 'stale' }
+  if (!available.includes(action.panel) || !currentDraft.value)
+    return { status: 'unavailable' }
+  activeTab.value = action.panel as typeof activeTab.value
+  await nextTick()
+  return {
+    status: current() && activeTab.value === action.panel ? 'done' : 'stale',
+    panel: activeTab.value,
+  }
+})
 
 const { requestSettingsVersion } = useHttpUi()
 watch(requestSettingsVersion, () => {
@@ -121,6 +148,7 @@ async function onSend() {
           <UiActionButton
             :disabled="!canGoBack"
             :tooltip="i18n.t('menu:history.back')"
+            shortcut="CommandOrControl+["
             @click="onBackClick"
           >
             <ChevronLeft class="h-3 w-3" />
@@ -128,6 +156,7 @@ async function onSend() {
           <UiActionButton
             :disabled="!canGoForward"
             :tooltip="i18n.t('menu:history.forward')"
+            shortcut="CommandOrControl+]"
             @click="onForwardClick"
           >
             <ChevronRight class="h-3 w-3" />
@@ -161,6 +190,7 @@ async function onSend() {
         v-else
         :aria-label="i18n.t('spaces.http.editor.send')"
         :tooltip="i18n.t('spaces.http.editor.send')"
+        shortcut="CommandOrControl+Enter"
         :disabled="
           isExecuting
             || !currentDraft.url

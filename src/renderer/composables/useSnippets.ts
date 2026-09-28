@@ -7,10 +7,12 @@ import type {
 } from '~/renderer/services/api/generated'
 import { useContentSort } from '@/composables/useContentSort'
 import { useDonations } from '@/composables/useDonations'
+import { useSonner } from '@/composables/useSonner'
 import { markPersistedStorageMutation } from '@/composables/useStorageMutation'
 import { i18n } from '@/electron'
 import { getContiguousSelection } from '@/utils'
 import { benchmarkStart } from '@/utils/benchmark'
+import { HTTPError } from 'ky'
 import { api } from '~/renderer/services/api'
 import { useApp, useDialog, useFolders } from '.'
 import { LibraryFilter } from './types'
@@ -62,8 +64,10 @@ const snippetsBySearch = shallowRef<SnippetsResponse>()
 const selectedSnippetRecord = shallowRef<SnippetItemResponse | undefined>()
 const displayedSnippetRecord = shallowRef<SnippetItemResponse | undefined>()
 const displayedSnippetContent = shallowRef<SnippetContentView | undefined>()
+const pendingContentReorders = reactive(new Set<number>())
 const selectedSnippetRecordStatus = ref<SelectedSnippetRecordStatus>('idle')
 let selectedSnippetRequestToken = 0
+let contentOrderRevision = 0
 let snippetsRequestToken = 0
 
 const searchQuery = ref('')
@@ -156,9 +160,12 @@ const selectedSnippets = computed(() => {
   return source.filter(s => targetIds.has(s.id))
 })
 
-async function refreshSelectedSnippet() {
+async function refreshSelectedSnippet(
+  canApply?: () => boolean,
+): Promise<boolean | undefined> {
   const snippetId = state.snippetId
   const requestToken = ++selectedSnippetRequestToken
+  const requestOrderRevision = contentOrderRevision
 
   if (snippetId === undefined) {
     selectedSnippetRecord.value = undefined
@@ -168,7 +175,13 @@ async function refreshSelectedSnippet() {
     return
   }
 
-  selectedSnippetRecordStatus.value = 'loading'
+  if (
+    !canApply
+    || selectedSnippetRecord.value?.id !== snippetId
+    || selectedSnippetRecordStatus.value !== 'ready'
+  ) {
+    selectedSnippetRecordStatus.value = 'loading'
+  }
 
   const finishBenchmark = benchmarkStart('code', 'open')
   try {
@@ -179,17 +192,39 @@ async function refreshSelectedSnippet() {
       && state.snippetId === snippetId
       && data.id === snippetId
     ) {
+      if (canApply && !canApply()) {
+        selectedSnippetRecordStatus.value = 'ready'
+        finishBenchmark('superseded')
+        return false
+      }
+      // A GET started before a successful reorder may still contain the old order.
+      if (requestOrderRevision !== contentOrderRevision) {
+        finishBenchmark('superseded')
+        return refreshSelectedSnippet(canApply)
+      }
       const maxContentIndex = Math.max(0, data.contents.length - 1)
-      const contentIndex = Math.min(
-        Math.max(0, state.snippetContentIndex || 0),
-        maxContentIndex,
+      const currentContentId
+        = selectedSnippetRecord.value?.id === snippetId
+          ? selectedSnippetRecord.value.contents[state.snippetContentIndex || 0]
+            ?.id
+          : undefined
+      const currentContentIndex = data.contents.findIndex(
+        content => content.id === currentContentId,
       )
+      const contentIndex
+        = currentContentIndex >= 0
+          ? currentContentIndex
+          : Math.min(
+              Math.max(0, state.snippetContentIndex || 0),
+              maxContentIndex,
+            )
       state.snippetContentIndex = contentIndex
       selectedSnippetRecord.value = data
       displayedSnippetRecord.value = data
       displayedSnippetContent.value = data.contents[contentIndex]
       selectedSnippetRecordStatus.value = 'ready'
       finishBenchmark()
+      return true
     }
     else {
       finishBenchmark('superseded')
@@ -329,7 +364,7 @@ async function getSnippets(query?: SnippetsQuery) {
 
     if (requestToken !== snippetsRequestToken) {
       finishBenchmark('superseded')
-      return
+      return false
     }
 
     if (forSearch) {
@@ -339,6 +374,7 @@ async function getSnippets(query?: SnippetsQuery) {
       snippets.value = data
     }
     finishBenchmark()
+    return true
   }
   catch (error) {
     finishBenchmark('error')
@@ -571,6 +607,106 @@ async function updateSnippets(snippetIds: number[], data: SnippetsUpdate[]) {
   })
   await getSnippets(queryByLibraryOrFolderOrSearch.value)
   await refreshSelectedSnippet()
+}
+
+async function reorderSnippetContents(snippetId: number, contentIds: number[]) {
+  const record = selectedSnippetRecord.value
+  if (
+    pendingContentReorders.has(snippetId)
+    || selectedSnippetRecordStatus.value !== 'ready'
+    || state.snippetId !== snippetId
+    || record?.id !== snippetId
+    || displayedSnippetRecord.value?.id !== snippetId
+    || record.pendingCloudDownload
+    || contentIds.length !== record.contents.length
+    || new Set(contentIds).size !== contentIds.length
+    || contentIds.some(
+      id => !record.contents.some(content => content.id === id),
+    )
+    || contentIds.every((id, index) => record.contents[index].id === id)
+  ) {
+    return
+  }
+
+  pendingContentReorders.add(snippetId)
+  try {
+    markPersistedStorageMutation()
+    await api.snippets.patchSnippetsByIdContentsOrder(String(snippetId), {
+      contentIds,
+    })
+    contentOrderRevision++
+
+    // Use current records: text edits and navigation can occur during the request.
+    function reorder<T extends SnippetView>(snippet: T): T {
+      if (
+        snippet.id !== snippetId
+        || snippet.contents.length !== contentIds.length
+        || snippet.contents.some(content => !contentIds.includes(content.id))
+      ) {
+        return snippet
+      }
+      const byId = new Map(
+        snippet.contents.map(content => [content.id, content]),
+      )
+      return { ...snippet, contents: contentIds.map(id => byId.get(id)!) }
+    }
+
+    const current = selectedSnippetRecord.value
+    const displayed = displayedSnippetRecord.value
+    const activeId = displayedSnippetContent.value?.id
+    const next = current ? reorder(current) : undefined
+    const nextDisplayed = displayed ? reorder(displayed) : undefined
+    const snapshot = stateSnapshots.beforeSearch
+    const snapshotRecord = [
+      current,
+      displayed,
+      ...(snippets.value || []),
+      ...(snippetsBySearch.value || []),
+    ].find(snippet => snippet?.id === snippetId)
+    if (
+      snapshot.snippetId === snippetId
+      && snapshotRecord
+      && reorder(snapshotRecord) !== snapshotRecord
+    ) {
+      const snapshotContentId
+        = snapshotRecord.contents[snapshot.snippetContentIndex || 0]?.id
+      const index = contentIds.indexOf(snapshotContentId!)
+      if (index >= 0) {
+        snapshot.snippetContentIndex = index
+      }
+    }
+
+    selectedSnippetRecord.value = next
+    displayedSnippetRecord.value = nextDisplayed
+    if (
+      state.snippetId === snippetId
+      && next?.id === snippetId
+      && nextDisplayed?.id === snippetId
+      && next !== current
+      && nextDisplayed !== displayed
+      && activeId !== undefined
+    ) {
+      const index = contentIds.indexOf(activeId)
+      if (index >= 0) {
+        state.snippetContentIndex = index
+      }
+    }
+    snippets.value = snippets.value?.map(reorder)
+    snippetsBySearch.value = snippetsBySearch.value?.map(reorder)
+  }
+  catch (error) {
+    console.error(error)
+    // The API transport already reports unavailable cloud content.
+    if (!(error instanceof HTTPError && error.response.status === 503)) {
+      useSonner().sonner({
+        type: 'error',
+        message: i18n.t('messages:error.fragmentOrderFailed'),
+      })
+    }
+  }
+  finally {
+    pendingContentReorders.delete(snippetId)
+  }
 }
 
 async function updateSnippetContent(
@@ -837,7 +973,7 @@ function clearSnippetsState() {
   state.snippetContentIndex = 0
 }
 
-async function search() {
+async function search(current: () => boolean = () => true) {
   if (searchQuery.value) {
     if (!isSearch.value) {
       saveStateSnapshot('beforeSearch')
@@ -847,14 +983,16 @@ async function search() {
     isSearch.value = true
     isRestoreStateBlocked.value = false
 
-    await getSnippets()
-    selectFirstSnippet()
+    if (!(await getSnippets()) || !current())
+      return false
+    await selectFirstSnippet()
     searchSelectedIndex.value = 0
     nextTick(() => scrollToSnippetIndex(0))
   }
   else {
     isSearch.value = false
   }
+  return true
 }
 
 async function selectSearchSnippet(index: number) {
@@ -936,6 +1074,8 @@ export function useSnippets() {
     selectSnippet,
     updateSnippet,
     updateSnippetContent,
+    reorderSnippetContents,
+    pendingContentReorders,
     updateSnippets,
     isAvailableToCodePreview,
   }

@@ -19,6 +19,7 @@ import {
   useSnippets,
 } from '@/composables'
 import { useHttpPanels } from '@/composables/spaces/http/useHttpPanels'
+import { useSpacePanels } from '@/composables/useSpacePanels'
 import { ipc } from '@/electron'
 import { navigateBack, navigateForward } from '@/ipc/listeners/deepLinks'
 import { router, RouterName } from '@/router'
@@ -39,7 +40,6 @@ const {
   isShowJsonVisualizer,
   setCodeLayoutMode,
   toggleCompactListMode,
-  toggleCodeSidebar,
 } = useApp()
 const {
   hideNotesViewModes,
@@ -49,7 +49,6 @@ const {
   setNotesLayoutMode,
   showNotesMindmap,
   showNotesPresentation,
-  toggleNotesSidebar,
   hideCompletedTasksInFolders,
 } = useNotesApp()
 const { setHttpLayoutMode, toggleHttpSidebar } = useHttpApp()
@@ -76,6 +75,7 @@ async function refreshActiveSortableList() {
 }
 
 export function registerMainMenuListeners() {
+  ipc.on('main-menu:open-ai', () => useSpacePanels().toggleAi())
   registerMainMenuContextSync()
 
   ipc.on('main-menu:goto-preferences', () => {
@@ -158,23 +158,9 @@ export function registerMainMenuListeners() {
     router.push({ name: RouterName.notesPresentation })
   })
 
-  ipc.on('main-menu:toggle-sidebar', () => {
-    const activeSpaceId = getActiveSpaceId()
-
-    if (activeSpaceId === 'code') {
-      toggleCodeSidebar()
-      return
-    }
-
-    if (activeSpaceId === 'notes') {
-      toggleNotesSidebar()
-      return
-    }
-
-    if (activeSpaceId === 'http') {
-      toggleHttpSidebar()
-    }
-  })
+  ipc.on('main-menu:toggle-sidebar', () => useSpacePanels().togglePrimary())
+  ipc.on('main-menu:toggle-secondary-sidebar', () =>
+    useSpacePanels().toggleSecondary())
 
   ipc.on('main-menu:toggle-compact-mode', () => {
     const activeSpaceId = getActiveSpaceId()
@@ -201,23 +187,11 @@ export function registerMainMenuListeners() {
     router.push({ name: RouterName.mathNotebook })
   })
 
-  ipc.on('main-menu:toggle-notes-inspector', () => {
-    const state = useNotesApp()
-    if (
-      getActiveSpaceId() === 'notes'
-      && selectedNote.value
-      && !state.isNotesMindmapShown.value
-      && !state.isNotesPresentationShown.value
-    ) {
-      state.isNotesInspectorOpen.value = !state.isNotesInspectorOpen.value
-    }
-  })
-
   ipc.on('main-menu:toggle-http-panel', (_, panel?: string) => {
     if (getActiveSpaceId() !== 'http')
       return
 
-    const { bottomOpen, inspectorOpen } = useHttpPanels()
+    const { bottomOpen } = useHttpPanels()
     const { httpState } = useHttpApp()
     if (panel === 'sidebar') {
       toggleHttpSidebar()
@@ -229,7 +203,7 @@ export function registerMainMenuListeners() {
       bottomOpen.value = !bottomOpen.value
     }
     else if (panel === 'inspector') {
-      inspectorOpen.value = !inspectorOpen.value
+      useSpacePanels().toggleSecondary()
     }
   })
 

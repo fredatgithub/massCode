@@ -121,7 +121,7 @@ async function refreshAfterStorageSync() {
       }
 
       if (router.currentRoute.value.name === RouterName.notesGraph) {
-        await getNotesGraph()
+        await getNotesGraph({ fresh: true })
       }
       break
     case 'http':
@@ -192,7 +192,10 @@ export function registerSystemListeners() {
       action: {
         label: i18n.t('messages:update.goToGitHub'),
         onClick: () => {
-          ipc.invoke('system:open-external', `${repository}/releases`)
+          ipc.invoke(
+            'system:open-external',
+            `${repository}/releases?ref=masscode-app`,
+          )
         },
       },
     })
@@ -210,29 +213,6 @@ export function registerSystemListeners() {
           ipc.invoke('system:install-update', null)
         },
       },
-    })
-  })
-
-  ipc.on(
-    'system:migration-complete',
-    (_, result: { folders: number, snippets: number, tags: number }) => {
-      sonner({
-        message: i18n.t('messages:success.migrateToMarkdown', {
-          folders: result.folders,
-          snippets: result.snippets,
-          tags: result.tags,
-        }),
-        type: 'success',
-      })
-    },
-  )
-
-  ipc.on('system:migration-error', (_, payload: { message: string }) => {
-    sonner({
-      message: i18n.t('messages:error.migration', {
-        error: payload.message,
-      }),
-      type: 'error',
     })
   })
 

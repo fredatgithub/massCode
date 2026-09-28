@@ -14,13 +14,11 @@ import { i18n, ipc, store } from '@/electron'
 import { router, RouterName } from '@/router'
 import { getSpaceDefinitions, isSpaceRouteName } from '@/spaceDefinitions'
 import { isMac } from '@/utils'
+import { useEventListener } from '@vueuse/core'
 import { LoaderCircle } from 'lucide-vue-next'
-import { loadWASM } from 'onigasm'
-import onigasmFile from 'onigasm/lib/onigasm.wasm?url'
 import { useRoute } from 'vue-router'
 import { Toaster } from 'vue-sonner'
 import { repository, version } from '../../package.json'
-import { loadGrammars } from './components/editor/grammars'
 import { registerIPCListeners } from './ipc'
 
 const { isAppLoading, isSponsored } = useApp()
@@ -74,6 +72,13 @@ watch(
 
 useTheme()
 
+useEventListener(document, 'selectstart', (event) => {
+  // Chromium targets body for document-wide Select All, including the native menu.
+  if (event.target === document.body) {
+    event.preventDefault()
+  }
+})
+
 // Одноразовый тост после смены версии приложения; контент живёт в release notes.
 function showWhatsNewOnce() {
   if (store.app.get('notifications.lastWhatsNewVersion') === version) {
@@ -93,7 +98,7 @@ function showWhatsNewOnce() {
       onClick: () => {
         ipc.invoke(
           'system:open-external',
-          `${repository}/releases/tag/v${version}`,
+          `${repository}/releases/tag/v${version}?ref=masscode-app`,
         )
       },
     },
@@ -215,10 +220,7 @@ function restoreSavedSpace() {
 
 async function init() {
   registerIPCListeners()
-  ipc.send('system:renderer-ready', null, () => {})
   restoreSavedSpace()
-  loadWASM(onigasmFile)
-  await loadGrammars()
   useActivityTracker()
   useCopyTracker()
   if (!isSponsored.value) {

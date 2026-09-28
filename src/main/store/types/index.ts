@@ -117,8 +117,10 @@ export interface DonationsState {
 }
 
 export interface AppStore {
+  aiPromptHistory: string[]
   window: {
     bounds: object
+    devToolsOpen: boolean
   }
   ui: {
     compactListMode: boolean
@@ -225,7 +227,6 @@ export interface MarkdownSettings {
 
 export interface StorageSettings {
   vaultPath: string | null
-  sqliteMigrated: boolean
 }
 
 export interface NotesEditorSettings {
@@ -266,6 +267,7 @@ export interface TasksSettings {
 }
 
 export interface PreferencesStore {
+  aiPromptHistoryLimit: number
   appearance: {
     theme: string
     dockBadgeSource: DockBadgeSource

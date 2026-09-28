@@ -189,6 +189,7 @@ export interface SnippetsStorage {
   getSnippets: (query: SnippetsQueryInput) => SnippetRecord[]
   getSnippetsAsync?: (query: SnippetsQueryInput) => Promise<SnippetRecord[]>
   getSnippetsCounts: () => SnippetsCount
+  reorderSnippetContents: (snippetId: number, contentIds: number[]) => void
   updateSnippet: (id: number, input: SnippetUpdateInput) => SnippetUpdateResult
   updateSnippetContent: (
     snippetId: number,
@@ -372,7 +373,7 @@ export interface HttpFolderCreateInput {
 }
 
 export interface HttpFolderUpdateInput {
-  collectionConfig?: HttpCollectionConfig
+  collectionConfig?: HttpCollectionConfig | null
   name?: string
   icon?: string | null
   parentId?: number | null
@@ -405,6 +406,7 @@ export interface HttpRequestCreateInput {
 }
 
 export interface HttpRequestUpdateInput {
+  expectedRevision?: string
   protocol?: 'http' | 'websocket'
   name?: string
   folderId?: number | null
@@ -422,6 +424,7 @@ export interface HttpRequestUpdateInput {
 }
 
 export interface HttpRequestUpdateResult {
+  contentRevision?: string
   invalidInput: boolean
   notFound: boolean
 }
@@ -468,7 +471,11 @@ export interface HttpRequestsStorage {
   createRequest: (input: HttpRequestCreateInput) => { id: number }
   deleteRequest: (id: number) => { deleted: boolean }
   emptyTrash: () => { deletedCount: number }
-  getRequestById: (id: number) => (HttpRequestRecord & HttpRuntimeRead) | null
+  getRequestById: (
+    id: number,
+  ) =>
+    | (HttpRequestRecord & HttpRuntimeRead & { contentRevision: string | null })
+    | null
   updateRuntime: (
     id: number,
     runtime: HttpRuntime,

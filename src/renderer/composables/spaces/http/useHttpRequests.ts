@@ -58,6 +58,7 @@ const trashRequests = shallowRef<HttpRequestsResponse>([])
 export const isRestoreStateBlocked = ref(false)
 const currentRequest = shallowRef<HttpRequest | null>(null)
 const currentDraft = ref<HttpRequestDraft | null>(null)
+const draftBaseline = shallowRef<HttpRequest | null>(null)
 const { settings } = useHttpSettings()
 function persistedEncodeUrl(request: HttpRequest) {
   return (
@@ -153,6 +154,7 @@ async function getAllHttpRequests() {
     allRequests.value = active.data
     trashRequests.value = deleted.data
   }
+  return token === treeLoadToken
 }
 
 function getActionTargetIds(fallbackRequestId?: number) {
@@ -279,6 +281,7 @@ function assignDraft(request: HttpRequest | null) {
   syncingDraft = true
   try {
     currentRequest.value = request
+    draftBaseline.value = request
     currentDraft.value = request ? toDraft(request) : null
   }
   finally {
@@ -288,10 +291,10 @@ function assignDraft(request: HttpRequest | null) {
 }
 
 const isCurrentRequestDirty = computed(() => {
-  if (!currentRequest.value || !currentDraft.value)
+  if (!draftBaseline.value || !currentDraft.value)
     return false
   return (
-    JSON.stringify(toDraft(currentRequest.value))
+    JSON.stringify(toDraft(draftBaseline.value))
     !== JSON.stringify({
       ...currentDraft.value,
       url: getDisplayUrl(
@@ -322,10 +325,12 @@ export async function getHttpRequests(query?: HttpRequestsQuery) {
       requests.value = data
     }
     finishBenchmark()
+    return true
   }
   catch (error) {
     finishBenchmark('error')
     console.error(error)
+    return false
   }
 }
 
@@ -391,7 +396,11 @@ async function fetchHttpRequestById(
   }
 }
 
-async function loadCurrentRequest(requestId: number, transitionToken: number) {
+async function loadCurrentRequest(
+  requestId: number,
+  transitionToken: number,
+  current: () => boolean = () => true,
+) {
   const requestToken = ++selectionRequestToken
   isCurrentRequestLoading.value = true
 
@@ -401,15 +410,16 @@ async function loadCurrentRequest(requestId: number, transitionToken: number) {
 
     if (
       requestToken !== selectionRequestToken
+      || !current()
       || transitionToken !== httpRuntimeNavigation.transitionToken
     ) {
       finishBenchmark('superseded')
-      return
+      return false
     }
 
     if (httpState.requestId !== requestId) {
       finishBenchmark('superseded')
-      return
+      return false
     }
 
     // Транзиентный сбой загрузки: выбор откатывается на запись, которая
@@ -426,11 +436,12 @@ async function loadCurrentRequest(requestId: number, transitionToken: number) {
         selectedRequestIds.value = [previousId]
         lastSelectedRequestId.value = previousId
       }
-      return
+      return false
     }
 
     assignDraft(record)
     finishBenchmark()
+    return true
   }
   catch (error) {
     finishBenchmark('error')
@@ -574,32 +585,84 @@ async function duplicateHttpRequest(requestId: number) {
   }
 }
 
-// A rejected write never counts as a successful save.
-async function updateHttpRequest(
+function changesRequestContent(data: HttpRequestsUpdate) {
+  return Object.keys(data).some(
+    key => key !== 'isFavorites' && key !== 'expectedRevision',
+  )
+}
+
+// Metadata writes use the same CAS baseline as content saves. A later GET must
+// never lend a dirty draft the revision of an unrelated external write.
+async function persistHttpRequestUpdate(
   requestId: number,
   data: HttpRequestsUpdate,
 ): Promise<boolean> {
+  const baseline
+    = draftBaseline.value?.id === requestId ? draftBaseline.value : null
+  const request = currentRequest.value
+  const guarded = baseline && changesRequestContent(data)
+  if (guarded && !baseline.contentRevision)
+    return false
+  const update = guarded
+    ? { ...data, expectedRevision: baseline.contentRevision! }
+    : data
   try {
     markPersistedStorageMutation()
-    await api.httpRequests.patchHttpRequestsById(String(requestId), data)
+    const { data: response } = await api.httpRequests.patchHttpRequestsById(
+      String(requestId),
+      update,
+    )
+    if (guarded && draftBaseline.value === baseline) {
+      const { expectedRevision: _revision, ...saved } = update
+      const next = {
+        ...baseline,
+        ...saved,
+        contentRevision: response.contentRevision,
+      }
+      draftBaseline.value = next
+      if (request && currentRequest.value === request) {
+        currentRequest.value = {
+          ...request,
+          ...saved,
+          contentRevision: response.contentRevision,
+        }
+      }
+      // Keep an independent folder edit, but do not undo our own acknowledged move
+      // when the next content Save sends the entire draft.
+      if (
+        update.folderId !== undefined
+        && currentDraft.value?.folderId === baseline.folderId
+      ) {
+        currentDraft.value.folderId = update.folderId
+      }
+    }
+    return true
   }
   catch (error) {
     console.error(error)
     return false
   }
+}
 
-  try {
-    await refreshHttpRequests()
-    if (currentRequest.value?.id === requestId) {
-      await refreshCurrentRequestRecord(requestId)
+function updateHttpRequest(
+  requestId: number,
+  data: HttpRequestsUpdate,
+): Promise<boolean> {
+  const perform = async () => {
+    if (!(await persistHttpRequestUpdate(requestId, data)))
+      return false
+    try {
+      await refreshHttpRequests()
+      if (currentRequest.value?.id === requestId)
+        await refreshCurrentRequestRecord(requestId)
     }
+    catch (error) {
+      // A failed refresh does not invalidate an acknowledged write.
+      console.error(error)
+    }
+    return true
   }
-  catch (error) {
-    // Сама правка уже сохранена: сбой refresh не делает сохранение неудачным.
-    console.error(error)
-  }
-
-  return true
+  return changesRequestContent(data) ? queueRequestWrite(perform) : perform()
 }
 
 async function updateHttpRequests(
@@ -607,24 +670,17 @@ async function updateHttpRequests(
   data: HttpRequestsUpdate[],
 ) {
   try {
-    markPersistedStorageMutation()
-
-    // Ошибка одного элемента (например 503 на pending-записи) не прерывает
-    // batch: остальные элементы обрабатываются, список обновляется в любом
-    // случае, о пропуске сообщает общий 503-тост API-клиента.
+    // One rejected item does not stop the rest of the batch.
     for (const [index, requestId] of requestIds.entries()) {
-      try {
-        await api.httpRequests.patchHttpRequestsById(
-          String(requestId),
-          data[index],
-        )
-      }
-      catch (error) {
-        console.error(error)
-      }
+      const update = data[index]!
+      const perform = () => persistHttpRequestUpdate(requestId, update)
+      await (changesRequestContent(update)
+        ? queueRequestWrite(perform)
+        : perform())
     }
-
     await refreshHttpRequests()
+    if (currentRequest.value)
+      await refreshCurrentRequestRecord(currentRequest.value.id)
   }
   catch (error) {
     console.error(error)
@@ -806,23 +862,28 @@ async function emptyTrash() {
   }
 }
 
-export function selectFirstRequest(options?: { folderId?: number | null }) {
+export async function selectFirstRequest(options?: {
+  folderId?: number | null
+  current?: () => boolean
+}) {
   const source = isSearch.value ? requestsBySearch.value || [] : requests.value
-  const filteredSource = options
-    ? source.filter(
-        request => (request.folderId ?? null) === (options.folderId ?? null),
-      )
-    : source
+  const filteredSource
+    = options && 'folderId' in options
+      ? source.filter(
+          request =>
+            (request.folderId ?? null) === (options.folderId ?? null),
+        )
+      : source
   const first = filteredSource?.[0]
 
   if (first) {
-    selectHttpRequest(first.id)
+    return selectHttpRequest(first.id, false, { current: options?.current })
   }
   else {
     // Сброс идёт через общий поток выбора: правки draft'а сохраняются до
     // assignDraft(null), а при неудачном PATCH сброс отменяется (запись
     // могла просто уйти из текущего фильтра списка).
-    selectHttpRequest(undefined)
+    return selectHttpRequest(undefined, false, { current: options?.current })
   }
 }
 
@@ -832,8 +893,8 @@ export function selectFirstRequest(options?: { folderId?: number | null }) {
 export function selectHttpRequest(
   requestId: number | undefined,
   withShift = false,
-  options: { preservePanel?: boolean } = {},
-): Promise<void> {
+  options: { preservePanel?: boolean, current?: () => boolean } = {},
+): Promise<boolean> {
   // Расширение выделения shift'ом не меняет открытый draft — выполняется
   // синхронно и без сохранения.
   if (
@@ -852,7 +913,7 @@ export function selectHttpRequest(
     if (rangeSelection.length) {
       selectedRequestIds.value = rangeSelection
       lastSelectedRequestId.value = requestId
-      return Promise.resolve()
+      return Promise.resolve(true)
     }
   }
 
@@ -865,14 +926,18 @@ export function selectHttpRequest(
 
 async function applyHttpRequestSelection(
   requestId: number | undefined,
-  options: { preservePanel?: boolean },
+  options: { preservePanel?: boolean, current?: () => boolean },
 ) {
   const transitionToken = ++httpRuntimeNavigation.transitionToken
 
   if (!(await httpRuntimeNavigation.confirmLeave()))
-    return
-  if (transitionToken !== httpRuntimeNavigation.transitionToken)
-    return
+    return false
+  if (
+    options.current?.() === false
+    || transitionToken !== httpRuntimeNavigation.transitionToken
+  ) {
+    return false
+  }
 
   if (!options.preservePanel)
     httpState.activePanel = 'request'
@@ -882,14 +947,14 @@ async function applyHttpRequestSelection(
     selectedRequestIds.value = []
     lastSelectedRequestId.value = undefined
     assignDraft(null)
-    return
+    return true
   }
 
   selectedRequestIds.value = [requestId]
   lastSelectedRequestId.value = requestId
   httpState.requestId = requestId
 
-  await loadCurrentRequest(requestId, transitionToken)
+  return loadCurrentRequest(requestId, transitionToken, options.current)
 }
 
 function hasSiblingRequestNameConflict(
@@ -908,13 +973,17 @@ function hasSiblingRequestNameConflict(
   )
 }
 
-// Serialize repeated explicit saves so an older PATCH cannot win the race.
+// Serialize content saves and metadata changes against one acknowledged baseline.
 let saveChain: Promise<boolean> = Promise.resolve(true)
 
-export function saveCurrentRequest(): Promise<boolean> {
-  const next = saveChain.then(() => performSaveCurrentRequest())
+function queueRequestWrite(write: () => Promise<boolean>): Promise<boolean> {
+  const next = saveChain.then(write)
   saveChain = next.catch(() => false)
   return next
+}
+
+export function saveCurrentRequest(): Promise<boolean> {
+  return queueRequestWrite(performSaveCurrentRequest)
 }
 
 // Invalid fields and rejected writes retain the draft and block navigation.
@@ -932,6 +1001,7 @@ async function performSaveCurrentRequest(): Promise<boolean> {
   const draft = currentDraft.value
   const update: HttpRequestsUpdate = JSON.parse(
     JSON.stringify({
+      expectedRevision: draftBaseline.value?.contentRevision,
       folderId: draft.folderId,
       protocol: draft.protocol,
       method: draft.method,
@@ -947,11 +1017,29 @@ async function performSaveCurrentRequest(): Promise<boolean> {
   )
 
   const request = currentRequest.value
+  if (!update.expectedRevision)
+    return false
+  let contentRevision: string
   try {
     markPersistedStorageMutation()
-    await api.httpRequests.patchHttpRequestsById(String(request.id), update)
+    const { data } = await api.httpRequests.patchHttpRequestsById(
+      String(request.id),
+      update,
+    )
+    contentRevision = data.contentRevision
   }
   catch (error) {
+    if (
+      error
+      && typeof error === 'object'
+      && 'response' in error
+      && (error.response as { status?: number })?.status === 409
+    ) {
+      useSonner().sonner({
+        type: 'warning',
+        message: i18n.t('spaces.http.requestConflict'),
+      })
+    }
     console.error(error)
     return false
   }
@@ -961,7 +1049,13 @@ async function performSaveCurrentRequest(): Promise<boolean> {
     currentRequest.value?.id === request.id
     && currentRequest.value.createdAt === request.createdAt
   ) {
-    currentRequest.value = { ...currentRequest.value, ...update }
+    const { expectedRevision: _revision, ...saved } = update
+    const baseline = { ...request, ...saved, contentRevision }
+    draftBaseline.value = baseline
+    // A sync may already have observed a newer MCP write while PATCH was in flight.
+    // Keep that row for discard/reload, but never adopt its revision as our baseline.
+    if (currentRequest.value === request)
+      currentRequest.value = baseline
   }
   void refreshHttpRequests().catch(console.error)
   return true
@@ -1047,6 +1141,7 @@ function resetHttpRequestsState() {
   requestsBySearch.value = undefined
   currentRequest.value = null
   currentDraft.value = null
+  draftBaseline.value = null
   selectedRequestIds.value = []
   lastSelectedRequestId.value = undefined
   httpState.requestId = undefined

@@ -162,30 +162,6 @@ export interface SaveStateOptions {
   immediate?: boolean
 }
 
-export interface SqliteSnippetRow {
-  createdAt: number
-  description: string | null
-  folderId: number | null
-  id: number
-  isDeleted: number
-  isFavorites: number
-  name: string
-  updatedAt: number
-}
-
-export interface SqliteSnippetContentRow {
-  id: number
-  label: string | null
-  language: string | null
-  snippetId: number
-  value: string | null
-}
-
-export interface SqliteSnippetTagRow {
-  snippetId: number
-  tagId: number
-}
-
 export interface Paths {
   inboxDirPath: string
   metaDirPath: string
@@ -195,9 +171,11 @@ export interface Paths {
 }
 
 export type MarkdownErrorCode =
+  | 'CONFLICT'
   | 'HTTP_COLLECTION_INVALID'
   | 'HTTP_COLLECTION_ROOT_ONLY'
   | 'FOLDER_NOT_FOUND'
+  | 'INVALID_CONTENT_ORDER'
   | 'INVALID_NAME'
   | 'NAME_CONFLICT'
   | 'RESERVED_NAME'

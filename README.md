@@ -10,7 +10,7 @@ A free, open-source developer workspace.
 <p align="center">
   <strong>Snippets, notes, HTTP requests, calculations, drawings, and dev tools in one local-first app.</strong>
   <br>
-  Your data stays on your machine as plain Markdown files.
+  Your workspace is stored locally as plain Markdown files.
 </p>
 
 <p align="center">
@@ -177,13 +177,25 @@ Save web content from Chrome, Firefox, or Safari into the local massCode app.
 - Save pages or links as HTTP `GET` requests
 - Connect through the local Integration API with an API token
 
+### AI Assistant
+
+Ask the built-in assistant to carry out tasks across Code, Notes, and HTTP using your own AI provider account or a local model.
+
+- Edit and format snippets, organize notes, and update tasks
+- Find records across your vault and use them in a conversation
+- Run HTTP collections with confirmation, explain failed checks, and save reports in Notes
+- Request a preview before edits, adjust a task while it runs, and undo changes that support Undo
+
+Cloud providers receive the context used for the task; use a model running on your computer for local processing. See the [AI Assistant guide](https://masscode.io/documentation/ai/) for setup and examples.
+
 ### MCP Integration
 
 Connect Codex, Claude Code, Cursor, or VS Code Copilot to your massCode vault through the built-in MCP server.
 
 - Find and read snippets, notes, and saved HTTP requests from your coding agent
-- Save code, Markdown notes, and HTTP requests directly to Inbox
-- Send saved HTTP requests using the active massCode environment
+- Save code and Markdown notes to Inbox; organize HTTP requests in Inbox or collections
+- Edit and move saved HTTP requests with protection against overwriting newer changes
+- Preview and send requests using the active massCode environment, then inspect saved execution history
 
 See the [MCP setup guide](https://masscode.io/documentation/mcp/) to connect your agent.
 
@@ -199,6 +211,12 @@ Your snippets, notes, and HTTP requests live as plain `.md` files on disk with f
 ## Custom Themes
 
 Customize the app UI and editor syntax highlighting with JSON theme files. Supports light and dark themes with live reload. See the [theme docs](https://masscode.io/documentation/themes.html).
+
+## Contributions
+
+massCode accepts external pull requests only for localizations and new syntax highlighting languages. To report a bug, please [open an issue](https://github.com/massCodeIO/massCode/issues/new/choose). For feature requests and ideas, start a discussion in [GitHub Discussions](https://github.com/massCodeIO/massCode/discussions).
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 ## Build Locally
 

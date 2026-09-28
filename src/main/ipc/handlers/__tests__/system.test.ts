@@ -1,3 +1,5 @@
+import os from 'node:os'
+import process from 'node:process'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const registeredHandlers = new Map<string, (...args: any[]) => unknown>()
@@ -6,6 +8,7 @@ const handle = vi.fn(
     registeredHandlers.set(channel, handler)
   },
 )
+const writeText = vi.fn()
 const relaunch = vi.fn()
 const quit = vi.fn()
 const openExternal = vi.fn()
@@ -34,6 +37,7 @@ const refreshDockBadge = vi.fn(() => ({ applied: true, count: 3 }))
 const scheduleDockBadgeRefresh = vi.fn()
 
 vi.mock('electron', () => ({
+  clipboard: { writeText },
   app: {
     relaunch,
     quit,
@@ -130,6 +134,7 @@ vi.mock('../../../store', () => ({
 beforeEach(() => {
   registeredHandlers.clear()
   vi.clearAllMocks()
+  writeText.mockReset()
   moveVault.mockReset()
   startMarkdownWatcher.mockReset()
   i18nT.mockReset()
@@ -143,6 +148,62 @@ beforeEach(() => {
 })
 
 describe('registerSystemHandlers', () => {
+  it('returns versions and OS from the main process', async () => {
+    const { registerSystemHandlers } = await import('../system')
+    registerSystemHandlers()
+
+    expect(registeredHandlers.get('system:runtime-info')!()).toEqual({
+      electron: process.versions.electron,
+      chrome: process.versions.chrome,
+      node: process.versions.node,
+      v8: process.versions.v8,
+      os: `${os.type()} ${os.arch()} ${os.release()}`,
+    })
+  })
+
+  it.each(['hello', '', 'Привет\nworld'])(
+    'writes text through the native clipboard: %j',
+    async (value) => {
+      const { registerSystemHandlers } = await import('../system')
+      registerSystemHandlers()
+
+      registeredHandlers.get('system:clipboard-write-text')!(undefined, value)
+
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(value)
+    },
+  )
+
+  it.each([undefined, null, 123, {}, ['text']])(
+    'rejects invalid clipboard payload: %j',
+    async (value) => {
+      const { registerSystemHandlers } = await import('../system')
+      registerSystemHandlers()
+
+      expect(() =>
+        registeredHandlers.get('system:clipboard-write-text')!(
+          undefined,
+          value,
+        ),
+      ).toThrow('messages:error.copyFailed')
+      expect(writeText).not.toHaveBeenCalled()
+    },
+  )
+
+  it('propagates a native clipboard failure to the invoke caller', async () => {
+    const { registerSystemHandlers } = await import('../system')
+    registerSystemHandlers()
+    writeText.mockImplementationOnce(() => {
+      throw new Error('Native write failed')
+    })
+
+    expect(() =>
+      registeredHandlers.get('system:clipboard-write-text')!(
+        undefined,
+        'hello',
+      ),
+    ).toThrow('Native write failed')
+  })
+
   it('registers a handler for directory state lookup', async () => {
     const { registerSystemHandlers } = await import('../system')
 

@@ -3,7 +3,6 @@ import type {
   MainMenuContentSortField,
   MainMenuContentSortOrder,
   MainMenuContext,
-  MainMenuLayoutMode,
   MainMenuPrimaryAction,
 } from '../types/menu'
 import type { MenuConfig } from './utils'
@@ -137,19 +136,19 @@ const helpMenuItems: MenuConfig[] = [
   {
     label: i18n.t('menu:help.website'),
     click: () => {
-      shell.openExternal('https://masscode.io')
+      shell.openExternal('https://masscode.io?ref=masscode-app')
     },
   },
   {
     label: i18n.t('menu:help.documentation'),
     click: () => {
-      shell.openExternal('https://masscode.io/documentation')
+      shell.openExternal('https://masscode.io/documentation?ref=masscode-app')
     },
   },
   {
     label: i18n.t('menu:help.twitter'),
     click: () => {
-      shell.openExternal('https://twitter.com/anton_reshetov')
+      shell.openExternal('https://twitter.com/anton_reshetov?ref=masscode-app')
     },
   },
   {
@@ -158,27 +157,33 @@ const helpMenuItems: MenuConfig[] = [
   {
     label: i18n.t('menu:help.viewInGitHub'),
     click: () => {
-      shell.openExternal('https://github.com/massCodeIO/massCode')
+      shell.openExternal(
+        'https://github.com/massCodeIO/massCode?ref=masscode-app',
+      )
     },
   },
   {
     label: i18n.t('menu:help.changeLog'),
     click: () => {
-      shell.openExternal('https://github.com/massCodeIO/massCode/releases')
+      shell.openExternal(
+        'https://github.com/massCodeIO/massCode/releases?ref=masscode-app',
+      )
     },
   },
   {
     label: i18n.t('menu:help.reportIssue'),
     click: () => {
       shell.openExternal(
-        'https://github.com/massCodeIO/massCode/issues/new/choose',
+        'https://github.com/massCodeIO/massCode/issues/new/choose?ref=masscode-app',
       )
     },
   },
   {
     label: i18n.t('menu:help.giveStar'),
     click: () => {
-      shell.openExternal('https://github.com/massCodeIO/massCode/stargazers')
+      shell.openExternal(
+        'https://github.com/massCodeIO/massCode/stargazers?ref=masscode-app',
+      )
     },
   },
   {
@@ -188,17 +193,8 @@ const helpMenuItems: MenuConfig[] = [
     label: i18n.t('menu:help.extension.vscode'),
     click: () => {
       shell.openExternal(
-        'https://marketplace.visualstudio.com/items?itemName=AntonReshetov.masscode-assistant',
+        'https://marketplace.visualstudio.com/items?itemName=AntonReshetov.masscode-assistant&ref=masscode-app',
       )
-    },
-  },
-  {
-    type: 'separator',
-  },
-  {
-    label: i18n.t('menu:help.links.snippets'),
-    click: () => {
-      shell.openExternal('https://masscode.io/snippets')
     },
   },
   {
@@ -207,19 +203,25 @@ const helpMenuItems: MenuConfig[] = [
   {
     label: i18n.t('menu:help.donate.openCollective'),
     click: () => {
-      shell.openExternal('https://opencollective.com/masscode')
+      shell.openExternal(
+        'https://opencollective.com/masscode?ref=masscode-app',
+      )
     },
   },
   {
     label: i18n.t('menu:help.donate.gumroad'),
     click: () => {
-      shell.openExternal('https://antonreshetov.gumroad.com/l/masscode')
+      shell.openExternal(
+        'https://antonreshetov.gumroad.com/l/masscode?ref=masscode-app',
+      )
     },
   },
   {
     label: i18n.t('menu:help.donate.payPal'),
     click: () => {
-      shell.openExternal('https://www.paypal.com/paypalme/antongithub')
+      shell.openExternal(
+        'https://www.paypal.com/paypalme/antongithub?ref=masscode-app',
+      )
     },
   },
   {
@@ -375,68 +377,49 @@ function createFileMenuItems(context: MainMenuContext): MenuConfig[] {
   return items
 }
 
-function getSidebarLayoutAccelerator(
-  targetLayout: MainMenuLayoutMode,
-  currentLayout: MainMenuLayoutMode | null,
-) {
-  if (currentLayout === 'all-panels' && targetLayout === 'list-editor') {
-    return 'Alt+CommandOrControl+B'
-  }
-
-  if (currentLayout !== 'all-panels' && targetLayout === 'all-panels') {
-    return 'Alt+CommandOrControl+B'
-  }
-
-  return undefined
-}
-
 function createLayoutMenuItems(context: MainMenuContext): MenuConfig[] {
-  const panels = context.view.httpPanels
-  if (panels) {
-    return [
-      {
-        label: i18n.t('ui:spaces.http.inspector.sidebar'),
-        type: 'checkbox',
-        checked: panels.sidebar,
-        accelerator: 'CmdOrCtrl+Alt+B',
-        click: () => send('main-menu:toggle-http-panel', 'sidebar'),
-      },
-      {
-        label: i18n.t('ui:spaces.http.inspector.bottom'),
-        type: 'checkbox',
-        checked: panels.bottom,
-        enabled: panels.canToggleBottom,
-        click: () => send('main-menu:toggle-http-panel', 'bottom'),
-      },
-      {
-        label: i18n.t('ui:spaces.http.runtime.variablesInspector'),
-        type: 'checkbox',
-        checked: panels.inspector,
-        click: () => send('main-menu:toggle-http-panel', 'inspector'),
-      },
-    ]
-  }
-
-  if (!context.view.layoutModes.length || !context.view.layoutMode) {
+  const { view } = context
+  const sidebars = view.sidebars
+  const hasPrimary = sidebars || view.layoutMode || view.httpPanels
+  if (!hasPrimary)
     return []
-  }
 
-  const labels: Record<MainMenuLayoutMode, string> = {
-    'all-panels': i18n.t('menu:view.layout.allPanels'),
-    'list-editor': i18n.t('menu:view.layout.listEditor'),
-    'editor-only': i18n.t('menu:view.layout.editorOnly'),
+  const items: MenuConfig[] = [
+    {
+      label: i18n.t('menu:view.primarySidebar'),
+      type: 'checkbox',
+      checked:
+        sidebars?.primary
+        ?? view.httpPanels?.sidebar
+        ?? view.layoutMode === 'all-panels',
+      enabled: sidebars?.primaryAvailable ?? true,
+      accelerator: 'CommandOrControl+B',
+      click: () => send('main-menu:toggle-sidebar'),
+    },
+  ]
+  if (sidebars?.secondaryAvailable ?? context.editor.kind !== null) {
+    items.push({
+      label: i18n.t('menu:view.secondarySidebar'),
+      type: 'checkbox',
+      checked:
+        sidebars?.secondary
+        ?? view.httpPanels?.inspector
+        ?? view.notesInspector?.open
+        ?? false,
+      accelerator: 'Alt+CommandOrControl+B',
+      click: () => send('main-menu:toggle-secondary-sidebar'),
+    })
   }
-
-  return context.view.layoutModes.map(layoutMode => ({
-    label: labels[layoutMode],
-    type: 'radio',
-    checked: context.view.layoutMode === layoutMode,
-    accelerator: getSidebarLayoutAccelerator(
-      layoutMode,
-      context.view.layoutMode,
-    ),
-    click: () => send('main-menu:set-layout-mode', layoutMode),
-  }))
+  if (view.httpPanels) {
+    items.push({
+      label: i18n.t('ui:spaces.http.inspector.bottom'),
+      type: 'checkbox',
+      checked: view.httpPanels.bottom,
+      enabled: view.httpPanels.canToggleBottom,
+      click: () => send('main-menu:toggle-http-panel', 'bottom'),
+    })
+  }
+  return items
 }
 
 function createSortMenuItems(context: MainMenuContext): MenuConfig[] {
@@ -488,18 +471,12 @@ function createSortMenuItems(context: MainMenuContext): MenuConfig[] {
 
 function createViewMenuItems(context: MainMenuContext): MenuConfig[] {
   const items = createLayoutMenuItems(context)
-  if (context.view.notesInspector) {
-    items.push(
-      { type: 'separator' },
-      {
-        label: i18n.t('ui:notes.inspector.title'),
-        type: 'checkbox',
-        checked: context.view.notesInspector.open,
-        enabled: context.view.notesInspector.enabled,
-        click: () => send('main-menu:toggle-notes-inspector'),
-      },
-    )
-  }
+  items.push({
+    label: i18n.t('ui:ai.title'),
+    accelerator: 'CommandOrControl+L',
+    enabled: context.editor.kind !== null,
+    click: () => send('main-menu:open-ai'),
+  })
   const sortItems = createSortMenuItems(context)
 
   if (sortItems.length) {
@@ -620,6 +597,7 @@ function createEditorMenuItems(context: MainMenuContext): MenuConfig[] {
     })
     items.push({
       label: i18n.t('menu:editor.format'),
+      enabled: context.editor.canFormat,
       accelerator: 'Shift+Alt+F',
       click: () => send('main-menu:format'),
     })

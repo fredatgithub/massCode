@@ -3,6 +3,7 @@ import type { OpenDialogOptions } from 'electron'
 export type CombineWith<T extends string, U extends string> = `${U}:${T}`
 
 type MainMenuAction =
+  | 'open-ai'
   | 'add-description'
   | 'copy-note'
   | 'copy-snippet'
@@ -37,22 +38,25 @@ type MainMenuAction =
   | 'set-notes-editor-mode'
   | 'send-http-request'
   | 'toggle-sidebar'
+  | 'toggle-secondary-sidebar'
   | 'toggle-compact-mode'
   | 'toggle-hide-completed-tasks'
   | 'update-context'
   | 'goto-math-notebook'
 
-type DBAction = 'migrate-to-markdown'
-
 type SystemAction =
+  | `ai:${'settings' | 'configure' | 'models' | 'context-search' | 'start' | 'cancel' | 'event' | 'workspace-apply' | 'workspace-undo' | 'http-apply' | 'http-complete' | 'http-cancel' | 'data-complete' | 'mutation-complete' | 'mutation-start' | 'native-start' | 'native-complete' | 'workspace-cancel' | 'workspace-undo-partial' | 'steer' | 'answer'}`
   | 'activate-license'
   | 'api-request'
   | 'api-token-generate'
   | 'api-token-revoke'
+  | 'clipboard-write-text'
   | 'currency-rates'
   | 'currency-rates-refresh'
   | 'crypto-rates-refresh'
   | 'get-directory-state'
+  | 'tasks-cleanup'
+  | 'tasks-cleanup-undo'
   | 'reload'
   | 'move-vault'
   | 'set-vault-path'
@@ -64,27 +68,30 @@ type SystemAction =
   | 'show-snippet-in-file-manager'
   | 'deep-link'
   | 'install-update'
+  | 'check-for-updates'
+  | 'runtime-info'
   | 'update-available'
   | 'update-downloaded'
-  | 'renderer-ready'
   | 'confirm-leave'
   | 'confirm-leave-result'
   | 'storage-synced'
   | 'cloud-download-status'
   | 'cloud-download-progress'
-  | 'migration-complete'
-  | 'migration-error'
   | 'notes-asset-ready'
   | 'error'
 type PrettierAction = 'format'
 type FsAction =
   | 'assets'
+  | 'export-rendered-artifact'
   | 'export-note'
   | 'export-note-folder-site'
   | 'prepare-note-folder-site-export'
   | 'folder-icon:set'
   | 'folder-icon:write'
+  | 'folder-icon:change'
+  | 'folder-icon:undo'
   | 'import-markdown-folder'
+  | 'pick-note-image'
   | 'notes-asset'
 type ThemeAction = 'list' | 'get' | 'open-dir' | 'create-template' | 'changed'
 type SpacesAction =
@@ -136,7 +143,6 @@ type SpacesAction =
   | 'drawings:delete'
 
 export type MainMenuChannel = CombineWith<MainMenuAction, 'main-menu'>
-export type DBChannel = CombineWith<DBAction, 'db'>
 export type SystemChannel = CombineWith<SystemAction, 'system'>
 export type PrettierChannel = CombineWith<PrettierAction, 'prettier'>
 export type FsChannel = CombineWith<FsAction, 'fs'>
@@ -145,7 +151,6 @@ export type SpacesChannel = CombineWith<SpacesAction, 'spaces'>
 
 export type Channel =
   | MainMenuChannel
-  | DBChannel
   | SystemChannel
   | PrettierChannel
   | FsChannel
@@ -180,6 +185,9 @@ export interface FolderIconWritePayload extends FolderIconTarget {
 export interface FolderIconSetPayload extends FolderIconTarget {
   icon: string | null
 }
+export type FolderIconChangeResult =
+  | { status: 'done', receiptId: string, icon: string | null }
+  | { status: 'cancelled' | 'stale' | 'failed' | 'unavailable' }
 
 export interface ImportMarkdownFolderFile {
   content: string
@@ -201,14 +209,43 @@ export interface ImportMarkdownFolderResponse {
 
 export type NoteExportFormat = 'html' | 'pdf'
 
+export interface RenderedArtifactExportPayload {
+  format: 'png' | 'svg' | 'html'
+  name: string
+  data: string
+  vault: string
+}
+
+export type RenderedArtifactExportResult =
+  | { status: 'saved', filePath: string, bytes: number }
+  | { status: 'cancelled' | 'stale' | 'failed' }
+
 export interface NoteExportDrawingPreview {
   id: string
   svg: string
 }
 
+export interface NoteExportDiagramPreview {
+  code: string
+  svg: string
+}
+
+export type NoteExportWarnings = Partial<
+  Record<
+    | 'mermaid'
+    | 'drawings'
+    | 'managedImages'
+    | 'remoteImages'
+    | 'richFormatting'
+    | 'internalLinks',
+    number
+  >
+>
+
 export interface NoteExportPayload {
   content: string
   drawingPreviews?: NoteExportDrawingPreview[]
+  diagramPreviews?: NoteExportDiagramPreview[]
   format: NoteExportFormat
   name: string
 }
@@ -216,6 +253,7 @@ export interface NoteExportPayload {
 export interface NoteExportResponse {
   canceled: boolean
   filePath?: string
+  warnings?: NoteExportWarnings
 }
 
 export type NoteFolderSiteExportSort = 'createdAt' | 'updatedAt' | 'name'
@@ -228,6 +266,7 @@ export interface NoteFolderSiteExportPreparePayload {
 export type NoteFolderSiteExportPrepareResponse =
   | {
     drawingIds: string[]
+    mermaidSources?: string[]
     status: 'ready'
   }
   | {
@@ -236,6 +275,7 @@ export type NoteFolderSiteExportPrepareResponse =
 
 export interface NoteFolderSiteExportPayload {
   drawingPreviews: NoteExportDrawingPreview[]
+  diagramPreviews?: NoteExportDiagramPreview[]
   folderId: number
   order: NoteFolderSiteExportOrder
   sort: NoteFolderSiteExportSort
@@ -246,6 +286,7 @@ export type NoteFolderSiteExportResponse =
     canceled: false
     directoryPath: string
     status: 'exported'
+    warnings?: NoteExportWarnings
   }
   | {
     canceled: true
@@ -255,3 +296,30 @@ export type NoteFolderSiteExportResponse =
     canceled: false
     status: 'cloud-unavailable'
   }
+
+export interface NoteImagePickerInput {
+  vault: string
+  source?: 'picker' | 'clipboardImage'
+}
+export type NoteImagePickerResult =
+  | { status: 'saved', url: string, bytes: number }
+  | { status: 'cancelled' | 'stale' | 'failed' }
+
+export interface TaskCleanupResult {
+  status: 'done' | 'failed' | 'stale'
+  count: number
+  receiptId?: string
+}
+export interface TaskCleanupUndoResult {
+  undone: boolean
+  restored: number
+  conflicts: string[]
+}
+
+export interface RuntimeInfo {
+  electron: string
+  chrome: string
+  node: string
+  v8: string
+  os: string
+}

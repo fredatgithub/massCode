@@ -158,9 +158,9 @@ describe('createMainMenu', () => {
     )
 
     expect(viewMenu?.submenu?.map(item => item.label)).toEqual([
-      'menu:view.layout.allPanels',
-      'menu:view.layout.listEditor',
-      'menu:view.layout.editorOnly',
+      'menu:view.primarySidebar',
+      'menu:view.secondarySidebar',
+      'ui:ai.title',
       undefined,
       'menu:view.sortBy.label',
       'menu:view.sortBy.dateModified',
@@ -514,6 +514,7 @@ it('renders independent HTTP panel checkboxes and dispatches their actions', asy
   const template = buildFromTemplate.mock.calls[0]![0] as Array<{
     label?: string
     submenu?: Array<{
+      label?: string
       type?: string
       checked?: boolean
       enabled?: boolean
@@ -529,17 +530,12 @@ it('renders independent HTTP panel checkboxes and dispatches their actions', asy
     'checkbox',
   ])
   expect(items.map(item => item.checked)).toEqual([false, true, true])
-  expect(items[1]!.enabled).toBe(false)
+  expect(items[1]!.label).toBe('menu:view.secondarySidebar')
+  expect(items[2]!.enabled).toBe(false)
   items[0]!.click!()
-  expect(send).toHaveBeenLastCalledWith(
-    'main-menu:toggle-http-panel',
-    'sidebar',
-  )
-  items[2]!.click!()
-  expect(send).toHaveBeenLastCalledWith(
-    'main-menu:toggle-http-panel',
-    'inspector',
-  )
+  expect(send).toHaveBeenLastCalledWith('main-menu:toggle-sidebar')
+  items[1]!.click!()
+  expect(send).toHaveBeenLastCalledWith('main-menu:toggle-secondary-sidebar')
 })
 
 it('renders and dispatches the Notes inspector checkbox', async () => {
@@ -560,12 +556,98 @@ it('renders and dispatches the Notes inspector checkbox', async () => {
   }>
   const item = template
     .find(item => item.label === 'menu:view.label')!
-    .submenu!.find(item => item.label === 'ui:notes.inspector.title')!
+    .submenu!.find(item => item.label === 'menu:view.secondarySidebar')!
   expect(item).toMatchObject({
     type: 'checkbox',
     checked: true,
-    enabled: true,
+    accelerator: 'Alt+CommandOrControl+B',
   })
   item.click!()
-  expect(send).toHaveBeenLastCalledWith('main-menu:toggle-notes-inspector')
+  expect(send).toHaveBeenLastCalledWith('main-menu:toggle-secondary-sidebar')
 })
+
+it.each(['code', 'notes', 'http', null] as const)(
+  'exposes the AI accelerator for %s',
+  async (kind) => {
+    const { createMainMenu } = await import('../main')
+    const context = createNotesContext()
+    context.editor.kind = kind
+    createMainMenu(context)
+    const template = buildFromTemplate.mock.calls.at(-1)![0] as Array<{
+      label?: string
+      submenu?: unknown
+    }>
+    const view = template.find(item => item.label === 'menu:view.label')!
+    const items = view.submenu as Array<{
+      label?: string
+      enabled?: boolean
+      accelerator?: string
+      click?: () => void
+    }>
+    const assistant = items.find(item => item.label === 'ui:ai.title')!
+    expect(assistant.accelerator).toBe('CommandOrControl+L')
+    expect(assistant.enabled).toBe(kind !== null)
+    if (kind) {
+      assistant.click!()
+      expect(send).toHaveBeenLastCalledWith('main-menu:open-ai')
+    }
+  },
+)
+
+it.each([false, true])(
+  'enables Code Format only when renderer reports canFormat=%s',
+  async (canFormat) => {
+    const { createMainMenu } = await import('../main')
+    const context = createNotesContext()
+    context.editor.kind = 'code'
+    context.editor.canFormat = canFormat
+    buildFromTemplate.mockClear()
+    createMainMenu(context)
+    const template = buildFromTemplate.mock.calls[0]![0] as Array<{
+      submenu?: Array<{ label?: string, enabled?: boolean }>
+    }>
+    const format = template
+      .flatMap(item => item.submenu ?? [])
+      .find(item => item.label === 'menu:editor.format')
+    expect(format?.enabled).toBe(canFormat)
+  },
+)
+
+it.each([true, false])(
+  'uses actual secondary sidebar visibility (%s) for the menu checkbox',
+  async (open) => {
+    const { createMainMenu } = await import('../main')
+    const context = createNotesContext()
+    context.view.notesInspector = { open: !open, enabled: true }
+    context.view.sidebars = {
+      primary: true,
+      secondary: open,
+      secondaryAvailable: true,
+    }
+    buildFromTemplate.mockClear()
+    createMainMenu(context)
+    const template = buildFromTemplate.mock.calls[0]![0] as Array<{
+      label?: string
+      submenu?: Array<{
+        label?: string
+        checked?: boolean
+        accelerator?: string
+      }>
+    }>
+    const items = template.find(
+      item => item.label === 'menu:view.label',
+    )!.submenu!
+    expect(
+      items.find(item => item.label === 'menu:view.secondarySidebar'),
+    ).toMatchObject({
+      checked: open,
+      accelerator: 'Alt+CommandOrControl+B',
+    })
+    expect(
+      items.find(item => item.label === 'menu:view.primarySidebar'),
+    ).toMatchObject({
+      checked: true,
+      accelerator: 'CommandOrControl+B',
+    })
+  },
+)

@@ -41,6 +41,10 @@ export interface SnippetContentsAdd {
   language: string;
 }
 
+export interface SnippetContentsOrder {
+  contentIds: number[];
+}
+
 export interface SnippetContentsUpdate {
   label?: string;
   value?: string | null;
@@ -1094,6 +1098,7 @@ export interface HttpRuntimeSaveResponse {
 }
 
 export interface HttpRequestItemResponse {
+  contentRevision: string | null;
   runtimeRevision: string | null;
   runtime: {
     scripts?: {
@@ -1314,6 +1319,7 @@ export type HttpRequestsResponse = {
 }[];
 
 export interface HttpRequestsUpdate {
+  expectedRevision?: string;
   name?: string;
   folderId?: number | null;
   /**
@@ -1367,6 +1373,11 @@ export interface HttpRequestsUpdate {
     password?: string;
   };
   description?: string;
+}
+
+export interface HttpRequestsUpdateResponse {
+  message: string;
+  contentRevision: string;
 }
 
 export interface HttpEnvironmentItemResponse {
@@ -1997,6 +2008,34 @@ export class Api<
       >({
         path: `/snippets/${id}/contents`,
         method: "POST",
+        body: data,
+        type: ContentType.Json,
+        format: "json",
+        ...params,
+      }),
+
+    /**
+     * No description
+     *
+     * @tags Snippets
+     * @name PatchSnippetsByIdContentsOrder
+     * @request PATCH:/snippets/{id}/contents/order
+     */
+    patchSnippetsByIdContentsOrder: (
+      id: string,
+      data: SnippetContentsOrder,
+      params: RequestParams = {},
+    ) =>
+      this.request<
+        {
+          message: string;
+        },
+        {
+          message: string;
+        }
+      >({
+        path: `/snippets/${id}/contents/order`,
+        method: "PATCH",
         body: data,
         type: ContentType.Json,
         format: "json",
@@ -2937,11 +2976,17 @@ export class Api<
       data: HttpRequestsUpdate,
       params: RequestParams = {},
     ) =>
-      this.request<void, any>({
+      this.request<
+        HttpRequestsUpdateResponse,
+        {
+          message: string;
+        }
+      >({
         path: `/http-requests/${id}`,
         method: "PATCH",
         body: data,
         type: ContentType.Json,
+        format: "json",
         ...params,
       }),
 

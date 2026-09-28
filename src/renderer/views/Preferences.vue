@@ -11,11 +11,13 @@ import {
   Globe,
   HardDrive,
   Heart,
+  Info,
   Notebook,
   Palette,
   Plug,
   RefreshCw,
   Send,
+  Sparkles,
 } from 'lucide-vue-next'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -64,6 +66,11 @@ const nav: { label: string, name: string, icon: Component }[] = [
     icon: Palette,
   },
   {
+    label: i18n.t('ai.title'),
+    name: RouterName.preferencesAI,
+    icon: Sparkles,
+  },
+  {
     label: i18n.t('preferences:api.label'),
     name: RouterName.preferencesAPI,
     icon: Plug,
@@ -78,6 +85,11 @@ const nav: { label: string, name: string, icon: Component }[] = [
     name: RouterName.preferencesSupporter,
     icon: Heart,
   },
+  {
+    label: i18n.t('preferences:about.label'),
+    name: RouterName.preferencesAbout,
+    icon: Info,
+  },
 ]
 
 watch(
@@ -85,9 +97,10 @@ watch(
   (name) => {
     if (name && typeof name === 'string' && name.startsWith('preferences/')) {
       sessionStorage.setItem('preferences:lastRoute', name)
+      scrollRef.value?.scrollTo({ top: 0, behavior: 'instant' })
     }
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 )
 
 provide(preferencesKeys, {
@@ -133,10 +146,28 @@ provide(preferencesKeys, {
     <template #right>
       <div
         ref="scrollRef"
-        class="scrollbar h-full min-h-0 overflow-y-auto px-5 pt-3 pb-5"
+        class="preferences-form scrollbar h-full min-h-0 overflow-y-auto px-5 pt-3 pb-5"
       >
+        <AiPreferenceHandoff />
         <RouterView />
       </div>
     </template>
   </LayoutTwoColumn>
 </template>
+
+<style scoped>
+@reference "../styles.css";
+
+/* Shared dimensions for single-line controls across all preference pages. */
+.preferences-form :deep(input:not([type])),
+.preferences-form :deep(input[type="text"]),
+.preferences-form :deep(input[type="password"]),
+.preferences-form :deep(input[type="number"]),
+.preferences-form :deep(input[type="url"]),
+.preferences-form :deep(input[type="email"]),
+.preferences-form :deep(input[type="search"]),
+.preferences-form :deep([data-slot="button"]),
+.preferences-form :deep([data-slot="select-trigger"]) {
+  @apply box-border h-7 text-sm;
+}
+</style>

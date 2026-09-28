@@ -8,6 +8,7 @@ import type { SpaceId } from '@/spaceDefinitions'
 import type { MainMenuContext, MainMenuLayoutMode } from '~/main/types/menu'
 
 interface CodeMenuState {
+  canFormat: boolean
   layoutMode: LayoutMode
   canPreviewCode: boolean
   isCodePreviewShown: boolean
@@ -31,6 +32,7 @@ interface HttpMenuState {
 }
 
 interface CreateMainMenuContextOptions {
+  sidebars?: MainMenuContext['view']['sidebars']
   activeSpaceId: SpaceId | null
   compactListMode: boolean
   hideCompletedTasksInFolders: boolean
@@ -64,6 +66,7 @@ export function createMainMenuContext(
         canCreateTask: false,
       },
       view: {
+        sidebars: options.sidebars,
         layoutMode: options.code.layoutMode,
         layoutModes: sharedLayoutModes,
         contentSortField: options.contentSort.code.sort,
@@ -81,7 +84,7 @@ export function createMainMenuContext(
         kind: 'code',
         noteMode: null,
         canSendRequest: false,
-        canFormat: true,
+        canFormat: options.code.canFormat,
         canPreviewCode: options.code.canPreviewCode,
         isCodePreviewShown: options.code.isCodePreviewShown,
         canPreviewJson: options.code.canPreviewJson,
@@ -100,6 +103,7 @@ export function createMainMenuContext(
         canCreateTask: true,
       },
       view: {
+        sidebars: options.sidebars,
         notesInspector: {
           open: options.notes.inspectorOpen ?? false,
           enabled:
@@ -143,6 +147,7 @@ export function createMainMenuContext(
         canCreateTask: false,
       },
       view: {
+        sidebars: options.sidebars,
         layoutMode: null,
         layoutModes: [],
         httpPanels: options.http.panels ?? {
@@ -185,6 +190,7 @@ export function createMainMenuContext(
         canCreateTask: false,
       },
       view: {
+        sidebars: options.sidebars,
         layoutMode: null,
         layoutModes: [],
         contentSortField: options.contentSort.math.sort,
@@ -221,6 +227,7 @@ export function createMainMenuContext(
         canCreateTask: false,
       },
       view: {
+        sidebars: options.sidebars,
         layoutMode: null,
         layoutModes: [],
         contentSortField: options.contentSort.drawings.sort,
@@ -256,6 +263,7 @@ export function createMainMenuContext(
       canCreateTask: false,
     },
     view: {
+      sidebars: options.sidebars,
       layoutMode: null,
       layoutModes: [],
       contentSortField: null,
