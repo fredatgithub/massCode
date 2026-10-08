@@ -190,6 +190,214 @@ it('openrouter keeps unsigned reasoning when the answer has no tool call', async
   expect(result.calls).toEqual([])
   expect(JSON.stringify(result.replay)).toContain('Думаю дальше')
 })
+function openRouterToolCalls(count: number) {
+  const chunk = (delta: object, finish_reason: string | null = null) => ({
+    id: 'msg1',
+    model: 'test',
+    created: 1,
+    choices: [{ index: 0, delta, finish_reason }],
+  })
+  const wire = [
+    chunk({ role: 'assistant', content: 'Секретный ответ' }),
+    ...Array.from({ length: count }, (_, index) =>
+      chunk({
+        tool_calls: [
+          {
+            index,
+            id: `call${index}`,
+            type: 'function',
+            function: { name: 'read_http_context', arguments: '{}' },
+          },
+        ],
+      })),
+    chunk({}, 'tool_calls'),
+  ]
+    .map(event => `data: ${JSON.stringify(event)}\n\n`)
+    .join('')
+  return new Response(`${wire}data: [DONE]\n\n`, {
+    headers: { 'content-type': 'text/event-stream' },
+  })
+}
+it('openrouter accepts more than eight tool calls in one response', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => openRouterToolCalls(9)),
+  )
+  const result = await generateAiResponse(
+    {
+      provider: 'openrouter',
+      baseURL: AI_DEFAULT_URLS.openrouter,
+      model: 'test',
+      apiKey: 'synthetic',
+    },
+    {
+      instructions: 'test',
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [tool],
+      signal: new AbortController().signal,
+      onDelta: () => {},
+      operation: 'test',
+    },
+  )
+  expect(result.calls).toHaveLength(9)
+})
+it('openrouter rejects too many tool calls with a content-free diagnostic', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => openRouterToolCalls(17)),
+  )
+  const event = vi.fn()
+  await expect(
+    generateAiResponse(
+      {
+        provider: 'openrouter',
+        baseURL: AI_DEFAULT_URLS.openrouter,
+        model: 'test',
+        apiKey: 'synthetic',
+        trace: { nextSpan: () => 1, event },
+      },
+      {
+        instructions: 'test',
+        messages: [{ role: 'user', content: 'hello' }],
+        tools: [tool],
+        signal: new AbortController().signal,
+        onDelta: () => {},
+        operation: 'test',
+      },
+    ),
+  ).rejects.toMatchObject({
+    code: 'invalidResponse',
+    diagnostic: 'toolCalls:17',
+  })
+  const failure = event.mock.calls.find(([name]) => name === 'request.error')
+  expect(failure?.[1]).toMatchObject({
+    code: 'invalidResponse',
+    diagnostic: 'toolCalls:17',
+  })
+  expect(JSON.stringify(failure)).not.toContain('Секретный ответ')
+})
+function openRouterStream(...deltas: [object, (string | null)?][]) {
+  const wire = deltas
+    .map(([delta, finish_reason = null]) => ({
+      id: 'msg1',
+      model: 'test',
+      created: 1,
+      choices: [{ index: 0, delta, finish_reason }],
+    }))
+    .map(event => `data: ${JSON.stringify(event)}\n\n`)
+    .join('')
+  return new Response(`${wire}data: [DONE]\n\n`, {
+    headers: { 'content-type': 'text/event-stream' },
+  })
+}
+function generateOpenRouter(
+  fetched: () => Promise<Response>,
+  event = vi.fn(),
+  signal = new AbortController().signal,
+) {
+  vi.stubGlobal('fetch', vi.fn(fetched))
+  return generateAiResponse(
+    {
+      provider: 'openrouter',
+      baseURL: AI_DEFAULT_URLS.openrouter,
+      model: 'test',
+      apiKey: 'synthetic',
+      trace: { nextSpan: () => 1, event },
+    },
+    {
+      instructions: 'test',
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [tool],
+      signal,
+      onDelta: () => {},
+      operation: 'test',
+    },
+  )
+}
+it.each([
+  ['content_filter', 'finish:content-filter:content_filter'],
+  ['reason with spaces', 'finish:other'],
+  ['x'.repeat(33), 'finish:other'],
+])(
+  'keeps only a safe raw finish reason (%s) in the diagnostic',
+  async (raw, diagnostic) => {
+    await expect(
+      generateOpenRouter(async () =>
+        openRouterStream([{ role: 'assistant', content: 'Ответ' }], [{}, raw]),
+      ),
+    ).rejects.toMatchObject({ code: 'invalidResponse', diagnostic })
+  },
+)
+it('reports a reasoning-only response without an answer', async () => {
+  await expect(
+    generateOpenRouter(async () =>
+      openRouterStream(
+        [
+          {
+            role: 'assistant',
+            reasoning_details: [
+              { type: 'reasoning.text', text: 'Думаю', index: 0 },
+            ],
+          },
+        ],
+        [{}, 'stop'],
+      ),
+    ),
+  ).rejects.toMatchObject({
+    code: 'invalidResponse',
+    diagnostic: 'emptyResponse:reasoningOnly',
+  })
+})
+it('reports a replay schema failure without the response content', async () => {
+  const event = vi.fn()
+  await expect(
+    generateOpenRouter(
+      async () =>
+        openRouterStream(
+          [
+            {
+              role: 'assistant',
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'x'.repeat(300),
+                  type: 'function',
+                  function: { name: 'read_http_context', arguments: '{}' },
+                },
+              ],
+            },
+          ],
+          [{}, 'tool_calls'],
+        ),
+      event,
+    ),
+  ).rejects.toMatchObject({ code: 'upstream', diagnostic: 'replaySchema' })
+  const failure = event.mock.calls.find(([name]) => name === 'request.error')
+  expect(failure?.[1]).toMatchObject({
+    code: 'upstream',
+    diagnostic: 'replaySchema',
+  })
+  expect(JSON.stringify(failure)).not.toContain('x'.repeat(300))
+})
+it('traces the final provider error code instead of upstream', async () => {
+  const event = vi.fn()
+  await expect(
+    generateOpenRouter(
+      async () =>
+        new Response('{"error":{"message":"secret-value"}}', {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        }),
+      event,
+    ),
+  ).rejects.toMatchObject({ code: 'authentication', diagnostic: 'HTTP 401' })
+  const failure = event.mock.calls.find(([name]) => name === 'request.error')
+  expect(failure?.[1]).toMatchObject({
+    code: 'authentication',
+    diagnostic: 'HTTP 401',
+  })
+  expect(JSON.stringify(failure)).not.toContain('secret-value')
+})
 it.each(providers)(
   '%s maps exhausted credits to the quota error',
   async (provider) => {
@@ -504,6 +712,7 @@ it('never logs SDK raw errors or reasoning signatures', async () => {
 })
 it('cancellation propagates to the provider transport and cannot finish successfully', async () => {
   const controller = new AbortController()
+  const event = vi.fn()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (_url, init) => {
@@ -512,23 +721,25 @@ it('cancellation propagates to the provider transport and cannot finish successf
       return response('gemini')
     }),
   )
-  await expect(
-    generateAiResponse(
-      {
-        provider: 'gemini',
-        baseURL: AI_DEFAULT_URLS.gemini,
-        model: 'test',
-        apiKey: 'synthetic',
-      },
-      {
-        instructions: 'test',
-        messages: [{ role: 'user', content: 'hello' }],
-        signal: controller.signal,
-        onDelta: () => {},
-        operation: 'test',
-      },
-    ),
-  ).rejects.toBeDefined()
+  const failure = await generateAiResponse(
+    {
+      provider: 'gemini',
+      baseURL: AI_DEFAULT_URLS.gemini,
+      model: 'test',
+      apiKey: 'synthetic',
+      trace: { nextSpan: () => 1, event },
+    },
+    {
+      instructions: 'test',
+      messages: [{ role: 'user', content: 'hello' }],
+      signal: controller.signal,
+      onDelta: () => {},
+      operation: 'test',
+    },
+  ).catch((error: unknown) => error)
+  expect(failure).toBeInstanceOf(Error)
+  expect(event.mock.calls.map(([name]) => name)).toContain('request.cancelled')
+  expect(event.mock.calls.map(([name]) => name)).not.toContain('request.error')
 })
 
 it.each(providers)(
@@ -565,9 +776,26 @@ it.each(providers)(
           operation: 'test',
         },
       ),
-    ).rejects.toMatchObject({ code: 'invalidResponse' })
+    ).rejects.toMatchObject({
+      code: 'invalidResponse',
+      diagnostic: expect.stringMatching(/^(finish:|emptyResponse)/),
+    })
   },
 )
+
+it('accepts assistant messages with more than eight tool calls', () => {
+  const message = (count: number) => ({
+    role: 'assistant',
+    content: '',
+    tool_calls: Array.from({ length: count }, (_, index) => ({
+      id: `call${index}`,
+      type: 'function',
+      function: { name: 'read_http_context', arguments: '{}' },
+    })),
+  })
+  expect(aiMessageSchema.safeParse(message(9)).success).toBe(true)
+  expect(aiMessageSchema.safeParse(message(17)).success).toBe(false)
+})
 
 it('replays malformed arguments with their failure result instead of crashing JSON parsing', () => {
   const message = aiMessageSchema.parse({
