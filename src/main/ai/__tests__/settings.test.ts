@@ -281,3 +281,14 @@ it('stores global user preferences across provider changes and supports clearing
   configureAi({ ...input, userInstructions: '' })
   expect(getAiConnection().userInstructions).toBe('')
 })
+
+it('reads a saved embedding server source as off', async () => {
+  const { configureAiSemantic, getAiSemanticSettings } = await import(
+    '../settings'
+  )
+  expect(getAiSemanticSettings()).toEqual({ source: 'off' })
+  configureAiSemantic({ source: 'builtin' })
+  expect(getAiSemanticSettings()).toEqual({ source: 'builtin' })
+  mocks.saved.semanticSource = 'provider'
+  expect(getAiSemanticSettings()).toEqual({ source: 'off' })
+})

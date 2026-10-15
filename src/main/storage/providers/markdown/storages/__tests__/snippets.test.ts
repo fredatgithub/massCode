@@ -214,6 +214,190 @@ describe('code snippets storage validations', () => {
     }
   })
 
+  it('rolls back runtime fragments when the snippet file write fails', () => {
+    const storage = createSnippetsStorage()
+    const { id } = storage.createSnippet({ name: 'Rollback' })
+    const first = storage.createSnippetContent(id, {
+      label: 'First',
+      language: 'text',
+      value: 'one',
+    }).id
+    storage.createSnippetContent(id, {
+      label: 'Second',
+      language: 'text',
+      value: 'two',
+    })
+    const record = getRuntimeCache(getPaths(tempVaultPath)).snippets[0]
+    const before = structuredClone(record)
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('ENOSPC')
+    })
+
+    try {
+      expect(() =>
+        storage.updateSnippetContent(id, first, {
+          label: 'Changed',
+          language: 'python',
+          value: 'changed',
+        }),
+      ).toThrow('ENOSPC')
+      expect(() =>
+        storage.createSnippetContent(id, {
+          label: 'Third',
+          language: 'text',
+          value: 'three',
+        }),
+      ).toThrow('ENOSPC')
+      expect(() => storage.deleteSnippetContent(id, first)).toThrow('ENOSPC')
+      expect(record).toEqual(before)
+    }
+    finally {
+      write.mockRestore()
+    }
+
+    resetRuntimeCache()
+    expect(
+      storage.getSnippetById(id)?.contents.map(content => content.value),
+    ).toEqual(['one', 'two'])
+  })
+
+  it('moves the snippet file back when the write after rename or move fails', () => {
+    const folders = createFoldersStorage()
+    const storage = createSnippetsStorage()
+    const source = folders.createFolder({ name: 'Source', parentId: null })
+    const target = folders.createFolder({ name: 'Target', parentId: null })
+    const { id } = storage.createSnippet({
+      folderId: source.id,
+      name: 'Moving',
+    })
+    storage.createSnippetContent(id, {
+      label: 'Main',
+      language: 'text',
+      value: 'body',
+    })
+    const paths = getPaths(tempVaultPath)
+    const { snippets, state } = getRuntimeCache(paths)
+    const snippet = snippets.find(snippet => snippet.id === id)!
+    const before = structuredClone(snippet)
+    const indexBefore = structuredClone(state.snippets)
+    const listMarkdownFiles = () =>
+      (fs.readdirSync(paths.vaultPath, { recursive: true }) as string[])
+        .filter(file => file.endsWith('.md'))
+        .sort()
+    const filesBefore = listMarkdownFiles()
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('EACCES')
+    })
+
+    try {
+      expect(() =>
+        storage.updateSnippet(id, {
+          folderId: target.id,
+          isFavorites: 1,
+          name: 'Moved',
+        }),
+      ).toThrow('EACCES')
+      expect(() => storage.updateSnippet(id, { isDeleted: 1 })).toThrow(
+        'EACCES',
+      )
+      expect(() =>
+        storage.updateSnippet(id, { name: 'X', folderId: 99999 }),
+      ).toThrow('Folder not found')
+      expect(snippet).toEqual(before)
+      expect(state.snippets).toEqual(indexBefore)
+    }
+    finally {
+      write.mockRestore()
+    }
+
+    expect(listMarkdownFiles()).toEqual(filesBefore)
+    resetRuntimeCache()
+    expect(storage.getSnippetById(id)).toMatchObject({
+      contents: [{ value: 'body' }],
+      folder: { id: source.id },
+      isDeleted: 0,
+      isFavorites: 0,
+      name: 'Moving',
+    })
+  })
+
+  it('keeps the snippet file on disk intact when the write fails midway', () => {
+    const storage = createSnippetsStorage()
+    const { id } = storage.createSnippet({ name: 'Partial' })
+    const contentId = storage.createSnippetContent(id, {
+      label: 'Main',
+      language: 'text',
+      value: 'old body',
+    }).id
+    const paths = getPaths(tempVaultPath)
+    const snippet = getRuntimeCache(paths).snippets.find(
+      snippet => snippet.id === id,
+    )!
+    const absolutePath = path.join(paths.vaultPath, snippet.filePath)
+    const rawBefore = fs.readFileSync(absolutePath, 'utf8')
+    const entriesBefore = fs.readdirSync(path.dirname(absolutePath)).sort()
+    const writeFileSync = fs.writeFileSync.bind(fs)
+    const write = vi
+      .spyOn(fs, 'writeFileSync')
+      .mockImplementation((file, data, options) => {
+        const text = String(data)
+        writeFileSync(file, text.slice(0, text.length / 2), options)
+        throw new Error('ENOSPC')
+      })
+
+    try {
+      expect(() =>
+        storage.updateSnippetContent(id, contentId, { value: 'new body' }),
+      ).toThrow('ENOSPC')
+    }
+    finally {
+      write.mockRestore()
+    }
+
+    expect(fs.readFileSync(absolutePath, 'utf8')).toBe(rawBefore)
+    expect(fs.readdirSync(path.dirname(absolutePath)).sort()).toEqual(
+      entriesBefore,
+    )
+  })
+
+  it('keeps the snippet file on disk intact when replacing it fails', () => {
+    const storage = createSnippetsStorage()
+    const { id } = storage.createSnippet({ name: 'Rename Fails' })
+    const contentId = storage.createSnippetContent(id, {
+      label: 'Main',
+      language: 'text',
+      value: 'old body',
+    }).id
+    const paths = getPaths(tempVaultPath)
+    const snippet = getRuntimeCache(paths).snippets.find(
+      snippet => snippet.id === id,
+    )!
+    const absolutePath = path.join(paths.vaultPath, snippet.filePath)
+    const rawBefore = fs.readFileSync(absolutePath, 'utf8')
+    const entriesBefore = fs.readdirSync(path.dirname(absolutePath)).sort()
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw new Error('EIO')
+    })
+
+    try {
+      expect(() =>
+        storage.updateSnippetContent(id, contentId, { value: 'new body' }),
+      ).toThrow('EIO')
+    }
+    finally {
+      rename.mockRestore()
+    }
+
+    expect(fs.readFileSync(absolutePath, 'utf8')).toBe(rawBefore)
+    expect(fs.readdirSync(path.dirname(absolutePath)).sort()).toEqual(
+      entriesBefore,
+    )
+    resetRuntimeCache()
+    expect(storage.getSnippetById(id)).toMatchObject({
+      contents: [{ value: 'old body' }],
+    })
+  })
+
   it('updateSnippet with empty patch returns invalidInput', () => {
     const storage = createSnippetsStorage()
     const { id } = storage.createSnippet({ name: 'Test Snippet' })
@@ -390,6 +574,81 @@ describe('code snippets storage validations', () => {
     finally {
       clock.mockRestore()
     }
+  })
+
+  it('hydrates lazy bodies through withContent without a search', async () => {
+    const storage = createSnippetsStorage()
+    const { id } = storage.createSnippet({ name: 'Lazy List' })
+    storage.createSnippetContent(id, {
+      label: 'Body',
+      language: 'text',
+      value: 'lazy body',
+    })
+    const cache = resyncTwiceForLazySnippets()
+    expect(cache.snippets[0].contents[0].value).toBeNull()
+    expect(
+      (await storage.getSnippetsAsync!({ isDeleted: 0 }))[0].contents[0].value,
+    ).toBeNull()
+    const records = await storage.getSnippetsAsync!({
+      isDeleted: 0,
+      withContent: true,
+    })
+    expect(records.map(record => record.contents[0].value)).toEqual([
+      'lazy body',
+    ])
+  })
+
+  it('changes record signatures on app and external edits only', () => {
+    const storage = createSnippetsStorage()
+    const { id } = storage.createSnippet({ name: 'Signed' })
+    const contentId = storage.createSnippetContent(id, {
+      label: 'Body',
+      language: 'text',
+      value: 'first body',
+    }).id
+    const trashed = storage.createSnippet({ name: 'Trashed' })
+    storage.updateSnippet(trashed.id, { isDeleted: 1 })
+    // Запись этой сессии ещё без метаданных state: сигнатура по updatedAt.
+    expect(storage.getSnippetSignatures!().get(id)!.sig).toMatch(/^u:\d+\|$/)
+    const cache = resyncTwiceForLazySnippets()
+    const initial = storage.getSnippetSignatures!()
+    expect([...initial.keys()]).toEqual([id])
+    expect(initial.get(id)).toEqual({
+      sig: expect.any(String),
+      pendingCloudDownload: false,
+    })
+    expect(storage.getSnippetSignatures!()).toEqual(initial)
+
+    // Приложение не обновляет метаданные state, сигнатуру меняет updatedAt записи.
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 1000)
+    storage.updateSnippetContent(id, contentId, { value: 'second body' })
+    vi.restoreAllMocks()
+    const edited = storage.getSnippetSignatures!().get(id)!.sig
+    expect(edited).not.toBe(initial.get(id)!.sig)
+
+    const snippet = cache.snippets.find(item => item.id === id)!
+    const absolutePath = path.join(cache.paths.vaultPath, snippet.filePath)
+    fs.writeFileSync(
+      absolutePath,
+      fs
+        .readFileSync(absolutePath, 'utf8')
+        .replace('second body', 'externally edited body'),
+    )
+    syncSnippetFileWithDisk(cache.paths, snippet.filePath)
+    expect(storage.getSnippetSignatures!().get(id)!.sig).not.toBe(edited)
+  })
+
+  it('changes the signature when the folder of a snippet is renamed', () => {
+    const storage = createSnippetsStorage()
+    const folders = createFoldersStorage()
+    const folder = folders.createFolder({ name: 'Background Jobs' })
+    const { id } = storage.createSnippet({ name: 'Pool', folderId: folder.id })
+    const before = storage.getSnippetSignatures!().get(id)!.sig
+    expect(before.endsWith('|Background Jobs')).toBe(true)
+    folders.updateFolder(folder.id, { name: 'Workers' })
+    expect(
+      storage.getSnippetSignatures!().get(id)!.sig.endsWith('|Workers'),
+    ).toBe(true)
   })
 
   it('materializes lazy fragment bodies on getSnippetById', () => {

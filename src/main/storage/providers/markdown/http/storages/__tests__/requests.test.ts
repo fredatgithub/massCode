@@ -5,6 +5,7 @@ import yaml from 'js-yaml'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { stateContentCacheByPath } from '../../../runtime/cache'
+import { listEntryFirst } from '../../../runtime/shared/__tests__/listEntryFirst'
 import {
   getFileAvailability,
   resetCloudFileExemptions,
@@ -135,6 +136,26 @@ describe('http requests storage', () => {
     tempVaultPath = ''
     vi.useRealTimers()
     vi.clearAllMocks()
+  })
+
+  it('changes request signatures on app edits and skips trashed requests', () => {
+    const requests = createHttpRequestsStorage()
+    const { id } = requests.createRequest({ name: 'Signed', method: 'GET' })
+    const trashed = requests.createRequest({ name: 'Trashed', method: 'GET' })
+    requests.updateRequest(trashed.id, { isDeleted: 1 })
+    resetHttpRuntimeCache()
+    const initial = requests.getRequestSignatures!()
+    expect([...initial.keys()]).toEqual([id])
+    expect(initial.get(id)).toEqual({
+      sig: expect.any(String),
+      pendingCloudDownload: false,
+    })
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 1000)
+    requests.updateRequest(id, { description: 'Lists orders' })
+    vi.restoreAllMocks()
+    expect(requests.getRequestSignatures!().get(id)!.sig).not.toBe(
+      initial.get(id)!.sig,
+    )
   })
 
   it('migrates legacy history through the real state writer and survives a cold reload', () => {
@@ -414,6 +435,177 @@ describe('http requests storage', () => {
     expect(fs.readFileSync(markdown, 'utf8')).toBe(originalSource)
   })
 
+  it('does not hand out ids already taken by frontmatter on a cold sync', () => {
+    const root = getHttpPaths(tempVaultPath).httpRoot
+    // Порядок обхода не гарантирован; при алфавитном (как на APFS) файлы
+    // без id встречаются раньше файлов с явными id.
+    const fixtures: [string, number | null][] = [
+      ['a-without-id.md', null],
+      ['b-with-id-1.md', 1],
+      ['c-with-id-2.md', 2],
+      ['d-without-id.md', null],
+    ]
+    for (const [fileName, id] of fixtures) {
+      fs.writeFileSync(
+        path.join(root, fileName),
+        `---\n${id === null ? '' : `id: ${id}\n`}name: ${fileName}\nmethod: GET\n---\n`,
+        'utf8',
+      )
+    }
+
+    const requests = createHttpRequestsStorage().getRequests()
+    const idByFile = new Map(requests.map(item => [item.filePath, item.id]))
+
+    expect(idByFile.get('b-with-id-1.md')).toBe(1)
+    expect(idByFile.get('c-with-id-2.md')).toBe(2)
+
+    const ids = requests.map(item => item.id)
+    expect(ids).toHaveLength(4)
+    expect(new Set(ids).size).toBe(4)
+
+    for (const request of requests) {
+      const { frontmatter } = splitFrontmatter(
+        fs.readFileSync(path.join(root, request.filePath), 'utf8'),
+      )
+      expect(frontmatter.id).toBe(request.id)
+    }
+  })
+
+  it('keeps indexed request ids and history when new files appear in an existing state', () => {
+    const requests = createHttpRequestsStorage()
+    const history = createHttpHistoryStorage()
+    const alpha = requests.createRequest({ name: 'Alpha', method: 'GET' })
+    const beta = requests.createRequest({ name: 'Beta', method: 'GET' })
+    history.appendEntry({
+      requestId: alpha.id,
+      method: 'GET',
+      url: 'https://qa.invalid/alpha',
+      status: 200,
+      durationMs: 1,
+      sizeBytes: 0,
+      requestedAt: 1,
+    })
+    flushPendingStateWrites()
+    resetHttpRuntimeCache()
+
+    const root = getHttpPaths(tempVaultPath).httpRoot
+    const readSource = (filePath: string) =>
+      fs.readFileSync(path.join(root, filePath), 'utf8')
+    const existingFiles = [alpha.id, beta.id].map(
+      id => requests.getRequestById(id)!.filePath,
+    )
+    fs.writeFileSync(
+      path.join(root, 'c-without-id.md'),
+      '---\nname: c-without-id.md\nmethod: GET\n---\n',
+      'utf8',
+    )
+    // Каноничный файл: неполный frontmatter нормализуется полным сканом и
+    // помешал бы проверить, что файл со свободным id не переписывается.
+    fs.writeFileSync(
+      path.join(root, 'd-free-id-50.md'),
+      readSource(existingFiles[1]).replace(`id: ${beta.id}\n`, 'id: 50\n'),
+      'utf8',
+    )
+    const unchangedFiles = [...existingFiles, 'd-free-id-50.md']
+    const sourcesBefore = unchangedFiles.map(readSource)
+    resetHttpRuntimeCache()
+
+    const idByFile = new Map(
+      requests.getRequests().map(item => [item.filePath, item.id]),
+    )
+
+    expect(idByFile.get(existingFiles[0])).toBe(alpha.id)
+    expect(idByFile.get(existingFiles[1])).toBe(beta.id)
+    expect(idByFile.get('d-free-id-50.md')).toBe(50)
+    expect(idByFile.get('c-without-id.md')).toBe(51)
+    expect(splitFrontmatter(readSource('c-without-id.md')).frontmatter.id).toBe(
+      51,
+    )
+    expect(unchangedFiles.map(readSource)).toEqual(sourcesBefore)
+    expect(fs.existsSync(path.join(root, '.history', String(alpha.id)))).toBe(
+      true,
+    )
+    expect(history.getEntries()).toMatchObject([
+      { requestId: alpha.id, url: 'https://qa.invalid/alpha' },
+    ])
+  })
+
+  it('keeps id and history of a request renamed outside the app', () => {
+    const requests = createHttpRequestsStorage()
+    const history = createHttpHistoryStorage()
+    const alpha = requests.createRequest({ name: 'Alpha', method: 'GET' })
+    history.appendEntry({
+      requestId: alpha.id,
+      method: 'GET',
+      url: 'https://qa.invalid/alpha',
+      status: 200,
+      durationMs: 1,
+      sizeBytes: 0,
+      requestedAt: 1,
+    })
+    flushPendingStateWrites()
+    resetHttpRuntimeCache()
+
+    const root = getHttpPaths(tempVaultPath).httpRoot
+    const oldFilePath = requests.getRequestById(alpha.id)!.filePath
+    const sourceBefore = fs.readFileSync(path.join(root, oldFilePath), 'utf8')
+    fs.renameSync(path.join(root, oldFilePath), path.join(root, 'Renamed.md'))
+    resetHttpRuntimeCache()
+
+    const list = requests.getRequests()
+
+    expect(list.find(item => item.filePath === 'Renamed.md')?.id).toBe(
+      alpha.id,
+    )
+    expect(list.some(item => item.filePath === oldFilePath)).toBe(false)
+    expect(fs.readFileSync(path.join(root, 'Renamed.md'), 'utf8')).toBe(
+      sourceBefore,
+    )
+    expect(history.getEntries()).toMatchObject([{ requestId: alpha.id }])
+    expect(fs.existsSync(path.join(root, '.history', String(alpha.id)))).toBe(
+      true,
+    )
+  })
+
+  it('hands out finite ids when the index has an entry without id', () => {
+    const requests = createHttpRequestsStorage()
+    const existing = requests.createRequest({
+      name: 'Existing',
+      method: 'GET',
+    })
+    flushPendingStateWrites()
+    resetHttpRuntimeCache()
+
+    const paths = getHttpPaths(tempVaultPath)
+    const rawState = yaml.load(fs.readFileSync(paths.statePath, 'utf8')) as {
+      requests: Record<string, unknown>[]
+    }
+    rawState.requests.push({ filePath: 'ghost.md' })
+    fs.writeFileSync(paths.statePath, yaml.dump(rawState), 'utf8')
+    stateContentCacheByPath.delete(paths.statePath)
+    fs.writeFileSync(
+      path.join(paths.httpRoot, 'new-without-id.md'),
+      '---\nname: new-without-id.md\nmethod: GET\n---\n',
+      'utf8',
+    )
+    resetHttpRuntimeCache()
+
+    const created = requests
+      .getRequests()
+      .find(item => item.filePath === 'new-without-id.md')!
+
+    expect(Number.isInteger(created.id)).toBe(true)
+    expect(created.id).toBeGreaterThan(existing.id)
+    expect(
+      splitFrontmatter(
+        fs.readFileSync(path.join(paths.httpRoot, created.filePath), 'utf8'),
+      ).frontmatter.id,
+    ).toBe(created.id)
+    expect(
+      Number.isFinite(getHttpRuntimeCache(paths).state.counters.requestId),
+    ).toBe(true)
+  })
+
   it('keeps runtime through cold and indexed sync and copying a Markdown request', () => {
     const storage = createHttpRequestsStorage()
     const { id } = storage.createRequest({ name: 'Portable' })
@@ -432,17 +624,26 @@ describe('http requests storage', () => {
     flushPendingStateWrites()
     resetHttpRuntimeCache()
     expect(storage.getRequestById(id)?.runtime).toEqual(rules)
-    fs.copyFileSync(
-      path.join(root, request.filePath),
-      path.join(root, 'Copied.md'),
-    )
+    const originalPath = path.join(root, request.filePath)
+    const sourceBefore = fs.readFileSync(originalPath)
+    fs.copyFileSync(originalPath, path.join(root, 'Copied.md'))
     flushPendingStateWrites()
     resetHttpRuntimeCache()
-    const copied = storage
-      .getRequests()
-      .find(item => item.filePath === 'Copied.md')!
-    expect(copied.id).not.toBe(id)
-    expect(storage.getRequestById(copied.id)?.runtime).toEqual(rules)
+    // Копия идёт по обходу раньше оригинала: от захвата его id защищает
+    // только резервирование id проиндексированных путей.
+    const readdirSpy = listEntryFirst('Copied.md')
+    try {
+      const copied = storage
+        .getRequests()
+        .find(item => item.filePath === 'Copied.md')!
+      expect(copied.id).not.toBe(id)
+      expect(storage.getRequestById(copied.id)?.runtime).toEqual(rules)
+      expect(storage.getRequestById(id)?.filePath).toBe(request.filePath)
+    }
+    finally {
+      readdirSpy.mockRestore()
+    }
+    expect(fs.readFileSync(originalPath).equals(sourceBefore)).toBe(true)
   })
 
   it('preserves externally edited and unsupported inline runtime through metadata saves', () => {
@@ -489,15 +690,19 @@ describe('http requests storage', () => {
           bodyType: 'text',
         }),
       ).not.toThrow()
-      const sourceIdentity = fs.lstatSync(sourcePath, { bigint: true })
+      const move = vi.spyOn(fs, 'moveSync')
       expect(() =>
         storage.updateRequest(id, { name: 'Resident Renamed' }),
       ).not.toThrow()
 
+      // Файл переносится, а не создаётся заново. Inode сравнивать нельзя:
+      // атомарная запись после переноса заменяет файл новым.
       const targetPath = path.join(paths.httpRoot, 'Resident Renamed.md')
-      const targetIdentity = fs.lstatSync(targetPath, { bigint: true })
-      expect(targetIdentity.dev).toBe(sourceIdentity.dev)
-      expect(targetIdentity.ino).toBe(sourceIdentity.ino)
+      expect(move).toHaveBeenCalledWith(sourcePath, targetPath, {
+        overwrite: false,
+      })
+      move.mockRestore()
+      expect(fs.pathExistsSync(sourcePath)).toBe(false)
       expect(fs.readFileSync(targetPath, 'utf8')).toContain('resident body')
       expect(getFileAvailability(targetPath).isCloudPlaceholder).toBe(false)
     }
@@ -550,14 +755,14 @@ describe('http requests storage', () => {
     const targetPath = path.join(paths.httpRoot, 'Write Target.md')
     const cloudFiles = await import('../../../runtime/shared/cloudFiles')
     const markSpy = vi.spyOn(cloudFiles, 'markAppWrittenFileAsLocal')
-    const writeFileSync = fs.writeFileSync.bind(fs)
+    const renameSync = fs.renameSync.bind(fs)
     const writeSpy = vi
-      .spyOn(fs, 'writeFileSync')
-      .mockImplementation((filePath, data, options?) => {
-        if (filePath === targetPath) {
+      .spyOn(fs, 'renameSync')
+      .mockImplementation((from, to) => {
+        if (to === targetPath) {
           throw new Error('trusted destination write failed')
         }
-        return writeFileSync(filePath, data, options as never)
+        return renameSync(from, to)
       })
 
     try {

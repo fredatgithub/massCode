@@ -21,6 +21,7 @@ import {
 } from '../../runtime/sync'
 import { createNotesFoldersStorage } from '../folders'
 import { createNotesNotesStorage } from '../notes'
+import { createNoteTagsStorage } from '../tags'
 
 let tempVaultPath = ''
 
@@ -342,6 +343,87 @@ describe('notes storage validations', () => {
     }
   })
 
+  it('hydrates lazy bodies through withContent without a search', async () => {
+    const storage = createNotesNotesStorage()
+    const { id } = storage.createNote({ name: 'Lazy List' })
+    storage.updateNoteContent(id, 'lazy note body')
+    const cache = resyncTwiceForLazyNotes()
+    expect(cache.notes[0].content).toBeNull()
+    const records = await storage.getNotesAsync!({
+      isDeleted: 0,
+      withContent: true,
+    })
+    expect(records.map(record => record.content)).toEqual(['lazy note body'])
+  })
+
+  it('marks a body that could not be read through async withContent', async () => {
+    const storage = createNotesNotesStorage()
+    for (const [name, body] of [
+      ['Readable', 'text'],
+      ['Empty', ''],
+      ['Failure', 'failedbody'],
+    ]) {
+      const { id } = storage.createNote({ name })
+      storage.updateNoteContent(id, body)
+    }
+    const cache = resyncTwiceForLazyNotes()
+    cancelNotesAssetsMigration()
+    const failed = cache.notes.find(item => item.name === 'Failure')!
+    const failedPath = path.join(cache.paths.notesRoot, failed.filePath)
+    vi.spyOn(cloudDownloads, 'enqueueCloudDownload').mockImplementation(
+      () => {},
+    )
+    const read = fs.readFileSync.bind(fs)
+    vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      file: string,
+      ...args: any[]
+    ) => {
+      if (file === failedPath)
+        throw new Error('simulated read failure')
+      return (read as any)(file, ...args)
+    }) as typeof fs.readFileSync)
+    try {
+      const records = await storage.getNotesAsync!({
+        isDeleted: 0,
+        withContent: true,
+      })
+      expect(
+        Object.fromEntries(
+          records.map(record => [
+            record.name,
+            [record.content, record.pendingCloudDownload],
+          ]),
+        ),
+      ).toEqual({
+        Readable: ['text', false],
+        Empty: ['', false],
+        Failure: ['', true],
+      })
+      expect(failed.pendingCloudDownload).not.toBe(true)
+    }
+    finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('changes note signatures on app edits and skips trashed notes', () => {
+    const storage = createNotesNotesStorage()
+    const { id } = storage.createNote({ name: 'Signed' })
+    storage.updateNoteContent(id, 'first body')
+    const trashed = storage.createNote({ name: 'Trashed' })
+    storage.updateNote(trashed.id, { isDeleted: 1 })
+    resyncTwiceForLazyNotes()
+    const initial = storage.getNoteSignatures!()
+    expect([...initial.keys()]).toEqual([id])
+    expect(initial.get(id)!.sig).toEqual(expect.any(String))
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 1000)
+    storage.updateNoteContent(id, 'second body')
+    vi.restoreAllMocks()
+    expect(storage.getNoteSignatures!().get(id)!.sig).not.toBe(
+      initial.get(id)!.sig,
+    )
+  })
+
   it('materializes lazy note content on getNoteById', () => {
     const storage = createNotesNotesStorage()
     const { id } = storage.createNote({ name: 'Lazy Read' })
@@ -510,6 +592,159 @@ describe('notes storage validations', () => {
     )
     expect(rawAfter).toContain('[[Renamed Target]]')
     expect(rawAfter).not.toContain('[[Target]]')
+  })
+
+  it('rolls back runtime fields when the note file write fails', () => {
+    const storage = createNotesNotesStorage()
+    const { id } = storage.createNote({ name: 'Rollback' })
+    storage.updateNoteContent(id, 'old body')
+    storage.updateNoteProperties(id, { properties: { status: 'todo' } })
+    const tag = createNoteTagsStorage().createTag('Fresh')
+    const note = getNotesRuntimeCache(getNotesPaths(tempVaultPath)).notes.find(
+      note => note.id === id,
+    )!
+    const before = structuredClone(note)
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('ENOSPC')
+    })
+
+    try {
+      expect(() => storage.updateNoteContent(id, 'new body')).toThrow('ENOSPC')
+      expect(() =>
+        storage.updateNoteProperties(id, {
+          properties: { priority: 'high', status: 'done' },
+        }),
+      ).toThrow('ENOSPC')
+      expect(() => storage.addTagToNote(id, tag.id)).toThrow('ENOSPC')
+      expect(note).toEqual(before)
+    }
+    finally {
+      write.mockRestore()
+    }
+
+    resetNotesRuntimeCache()
+    expect(storage.getNoteById(id)).toMatchObject({
+      content: 'old body',
+      properties: { status: 'todo' },
+      tags: [],
+    })
+  })
+
+  it('moves the note file back when the write after rename or move fails', () => {
+    const folders = createNotesFoldersStorage()
+    const storage = createNotesNotesStorage()
+    const source = folders.createFolder({ name: 'Source', parentId: null })
+    const target = folders.createFolder({ name: 'Target', parentId: null })
+    const { id } = storage.createNote({ folderId: source.id, name: 'Moving' })
+    storage.updateNoteContent(id, 'body')
+    const paths = getNotesPaths(tempVaultPath)
+    const { notes, state } = getNotesRuntimeCache(paths)
+    const note = notes.find(note => note.id === id)!
+    const before = structuredClone(note)
+    const indexBefore = structuredClone(state.notes)
+    const listMarkdownFiles = () =>
+      (fs.readdirSync(paths.notesRoot, { recursive: true }) as string[])
+        .filter(file => file.endsWith('.md'))
+        .sort()
+    const filesBefore = listMarkdownFiles()
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('EACCES')
+    })
+
+    try {
+      expect(() =>
+        storage.updateNote(id, {
+          folderId: target.id,
+          isFavorites: 1,
+          name: 'Moved',
+        }),
+      ).toThrow('EACCES')
+      expect(() => storage.updateNote(id, { isDeleted: 1 })).toThrow('EACCES')
+      expect(() =>
+        storage.updateNote(id, { name: 'X', folderId: 99999 }),
+      ).toThrow('Folder not found')
+      // Запись нового файла тоже падает: индекс не должен получить запись
+      // без файла.
+      expect(() => storage.createNote({ name: 'Ghost' })).toThrow('EACCES')
+      expect(note).toEqual(before)
+      expect(state.notes).toEqual(indexBefore)
+    }
+    finally {
+      write.mockRestore()
+    }
+
+    expect(listMarkdownFiles()).toEqual(filesBefore)
+    resetNotesRuntimeCache()
+    expect(storage.getNoteById(id)).toMatchObject({
+      content: 'body',
+      folder: { id: source.id },
+      isDeleted: 0,
+      isFavorites: 0,
+      name: 'Moving',
+    })
+  })
+
+  it('keeps the note file on disk intact when the write fails midway', () => {
+    const storage = createNotesNotesStorage()
+    const { id } = storage.createNote({ name: 'Partial' })
+    storage.updateNoteContent(id, 'old body')
+    const paths = getNotesPaths(tempVaultPath)
+    const note = getNotesRuntimeCache(paths).notes.find(
+      note => note.id === id,
+    )!
+    const absolutePath = path.join(paths.notesRoot, note.filePath)
+    const rawBefore = fs.readFileSync(absolutePath, 'utf8')
+    const entriesBefore = fs.readdirSync(path.dirname(absolutePath)).sort()
+    const writeFileSync = fs.writeFileSync.bind(fs)
+    const write = vi
+      .spyOn(fs, 'writeFileSync')
+      .mockImplementation((file, data, options) => {
+        const text = String(data)
+        writeFileSync(file, text.slice(0, text.length / 2), options)
+        throw new Error('ENOSPC')
+      })
+
+    try {
+      expect(() => storage.updateNoteContent(id, 'new body')).toThrow('ENOSPC')
+    }
+    finally {
+      write.mockRestore()
+    }
+
+    expect(fs.readFileSync(absolutePath, 'utf8')).toBe(rawBefore)
+    expect(fs.readdirSync(path.dirname(absolutePath)).sort()).toEqual(
+      entriesBefore,
+    )
+  })
+
+  it('keeps the note file on disk intact when replacing it fails', () => {
+    const storage = createNotesNotesStorage()
+    const { id } = storage.createNote({ name: 'Rename Fails' })
+    storage.updateNoteContent(id, 'old body')
+    const paths = getNotesPaths(tempVaultPath)
+    const note = getNotesRuntimeCache(paths).notes.find(
+      note => note.id === id,
+    )!
+    const absolutePath = path.join(paths.notesRoot, note.filePath)
+    const rawBefore = fs.readFileSync(absolutePath, 'utf8')
+    const entriesBefore = fs.readdirSync(path.dirname(absolutePath)).sort()
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw new Error('EIO')
+    })
+
+    try {
+      expect(() => storage.updateNoteContent(id, 'new body')).toThrow('EIO')
+    }
+    finally {
+      rename.mockRestore()
+    }
+
+    expect(fs.readFileSync(absolutePath, 'utf8')).toBe(rawBefore)
+    expect(fs.readdirSync(path.dirname(absolutePath)).sort()).toEqual(
+      entriesBefore,
+    )
+    resetNotesRuntimeCache()
+    expect(storage.getNoteById(id)).toMatchObject({ content: 'old body' })
   })
 
   it('createNote with bad folderId throws FOLDER_NOT_FOUND', () => {

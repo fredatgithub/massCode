@@ -36,6 +36,7 @@ import {
   normalizeDirectoryPath,
 } from './paths'
 import { rememberAppFileChange } from './shared/appChanges'
+import { writeFileAtomicSync } from './shared/atomicWrite'
 import {
   getFileAvailability,
   markAppWrittenFileAsLocal,
@@ -44,6 +45,7 @@ import { throwCloudContentUnavailable } from './shared/cloudGuards'
 import {
   getCachedDirectoryEntries,
   removeDirectoryEntryFromCache,
+  tryMoveFileBack,
   upsertDirectoryEntryInCache,
 } from './shared/directoryEntries'
 import { listMarkdownFiles as listMarkdownFilesShared } from './shared/path'
@@ -601,7 +603,7 @@ export function writeSnippetToFile(
     }
   }
 
-  fs.writeFileSync(snippetPath, nextContent, 'utf8')
+  writeFileAtomicSync(snippetPath, nextContent)
   rememberAppFileChange(snippetPath)
   markAppWrittenFileAsLocal(snippetPath)
 }
@@ -796,13 +798,34 @@ export function persistSnippet(
     )
   }
 
+  const previousSnippetFilePath = snippet.filePath
   snippet.filePath = targetPath
-  writeSnippetToFile(paths, snippet, {
-    skipIfUnavailable: options?.skipWriteIfUnavailable,
-    ...(moved && options?.sourceFileVerifiedLocal
-      ? { [trustedMovedLocalWrite]: true as const }
-      : {}),
-  })
+  try {
+    writeSnippetToFile(paths, snippet, {
+      skipIfUnavailable: options?.skipWriteIfUnavailable,
+      ...(moved && options?.sourceFileVerifiedLocal
+        ? { [trustedMovedLocalWrite]: true as const }
+        : {}),
+    })
+  }
+  catch (error) {
+    // Если вернуть файл не удалось, runtime остаётся на фактическом новом
+    // пути. Индекс state ещё не тронут: он обновляется только после записи.
+    if (
+      !moved
+      || tryMoveFileBack(
+        targetAbsolutePath,
+        sourceAbsolutePath!,
+        directoryEntriesCache,
+      )
+    ) {
+      snippet.filePath = previousSnippetFilePath
+    }
+    else {
+      upsertSnippetIndex(state, snippet)
+    }
+    throw error
+  }
 
   upsertDirectoryEntryInCache(
     path.dirname(targetAbsolutePath),

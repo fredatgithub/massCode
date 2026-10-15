@@ -30,6 +30,7 @@ import {
   getFileAvailability,
   markAppWrittenFileAsLocal,
 } from '../runtime/shared/cloudFiles'
+import { persistOrRestore } from '../runtime/shared/entityStorage'
 import {
   applyFolderParentAndOrder,
   assertFolderMoveTargetValid,
@@ -38,6 +39,7 @@ import {
   getFolderPathsByDepth,
   getFoldersSortedByCreatedAt,
   getFoldersTreeSorted,
+  listUnmanagedFolderFiles,
   moveFolderDirectoryOnDisk,
   removeFolderPathsFromDisk,
   resolveFolderUpdateTargets,
@@ -57,6 +59,30 @@ export function createFoldersStorage(): FoldersStorage {
       const { state } = getRuntimeCache(paths)
 
       return getFoldersTreeSorted(state.folders)
+    },
+    getUnmanagedFiles: (id) => {
+      const paths = getPaths(getVaultPath())
+
+      // До сверки список записей provisional и пуст: файлы настоящих
+      // сниппетов выглядели бы посторонними.
+      if (!isCodeVaultDiskReady(paths)) {
+        throwStorageError(
+          'VAULT_HYDRATING',
+          'Vault is still syncing, folder contents are not known yet',
+        )
+      }
+
+      const { state, snippets } = getRuntimeCache(paths)
+      const folderPath = buildFolderPathMap(state).get(id)
+      if (!folderPath) {
+        return []
+      }
+
+      return listUnmanagedFolderFiles(
+        paths.vaultPath,
+        folderPath,
+        new Set(snippets.map(snippet => snippet.filePath)),
+      )
     },
     createFolder: (input) => {
       const paths = getPaths(getVaultPath())
@@ -353,15 +379,23 @@ export function createFoldersStorage(): FoldersStorage {
               && sourceAvailability.exists
               && !sourceAvailability.isCloudPlaceholder
 
+          // name входит в snapshot: allowRenameOnConflict может его сменить.
+          const snapshot = {
+            folderId: snippet.folderId,
+            isDeleted: snippet.isDeleted,
+            name: snippet.name,
+            updatedAt: snippet.updatedAt,
+          }
           snippet.folderId = null
           snippet.isDeleted = 1
           snippet.updatedAt = Date.now()
-          persistSnippet(paths, state, snippet, previousPath, {
-            allowRenameOnConflict: true,
-            directoryEntriesCache,
-            skipWriteIfUnavailable: true,
-            sourceFileVerifiedLocal,
-          })
+          persistOrRestore(snippet, snapshot, () =>
+            persistSnippet(paths, state, snippet, previousPath, {
+              allowRenameOnConflict: true,
+              directoryEntriesCache,
+              skipWriteIfUnavailable: true,
+              sourceFileVerifiedLocal,
+            }))
         }
       })
 

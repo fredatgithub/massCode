@@ -37,7 +37,9 @@ import {
   deleteTagFromEntity,
   emptyEntityTrashFromStateAndDisk,
   getEntityDeleteCounts,
+  persistOrRestore,
 } from '../../runtime/shared/entityStorage'
+import { buildRecordSignatures } from '../../runtime/shared/recordSignature'
 import { querySearchIndex } from '../../runtime/shared/searchEngine'
 import {
   assertUniqueSiblingEntryName,
@@ -305,20 +307,46 @@ export function createNotesNotesStorage(): NotesStorage {
     },
     getNotesAsync: async (query) => {
       const search = query.search?.trim().toLowerCase()
-      if (!search || query.searchNameOnly)
+      const fullText = Boolean(search && !query.searchNameOnly)
+      if (!fullText && !query.withContent)
         return assembleNotes(getCache(), query, null)
+      // Подготовка полнотекстового поиска дочитывает тела с отдачей управления,
+      // поэтому withContent без поиска идёт тем же путём, а не синхронным
+      // дочитыванием в assembleNotes.
       while (true) {
         const prepared = await prepareNoteSearchAsync(getCache)
         if (!prepared.isCurrent())
           continue
-        const ids = querySearchIndex(
-          prepared.items,
-          search,
-          prepared.index,
-          buildNoteSearchText,
-        )
-        return assembleNotes(prepared.cache, query, ids, false)
+        const ids = fullText
+          ? querySearchIndex(
+              prepared.items,
+              search!,
+              prepared.index,
+              buildNoteSearchText,
+            )
+          : null
+        const records = assembleNotes(prepared.cache, query, ids, false)
+        if (!query.withContent)
+          return records
+        // Record отдаёт content ?? '': недочитанное тело (файл выгружен после
+        // скана) иначе неотличимо от пустой заметки. Помечается только запись
+        // ответа, runtime не меняется.
+        return records.map((record) => {
+          const note = prepared.cache.noteById.get(record.id)
+          return note && note.content === null && !record.pendingCloudDownload
+            ? { ...record, pendingCloudDownload: true }
+            : record
+        })
       }
+    },
+    getNoteSignatures() {
+      const { state, notes } = getCache()
+      // findNoteById, а не noteById: карта пересобирается лениво и не видит только что созданные.
+      return buildRecordSignatures(
+        state.notes,
+        id => findNoteById(notes, id),
+        state.folders,
+      )
     },
     getNoteById(id: number): NoteRecord | null {
       const { state, notes } = getCache()
@@ -466,18 +494,22 @@ export function createNotesNotesStorage(): NotesStorage {
         return { invalidInput: true, notFound: false }
       }
 
+      // filePath и индекс state persistNote откатывает сам вместе с файлом.
+      const snapshot = { ...updateResult.snapshot, updatedAt: note.updatedAt }
       note.updatedAt = Date.now()
 
-      if (updateResult.pathMayChange) {
-        persistNote(paths, state, note, previousFilePath, {
-          allowRenameOnConflict: true,
-          // assertEntityFileWritable выше уже проверил source до mutation.
-          sourceFileVerifiedLocal: true,
-        })
-      }
-      else {
-        writeNoteToFile(paths, note)
-      }
+      persistOrRestore(note, snapshot, () => {
+        if (updateResult.pathMayChange) {
+          persistNote(paths, state, note, previousFilePath, {
+            allowRenameOnConflict: true,
+            // assertEntityFileWritable выше уже проверил source до mutation.
+            sourceFileVerifiedLocal: true,
+          })
+        }
+        else {
+          writeNoteToFile(paths, note)
+        }
+      })
 
       if (note.name !== previousName || note.folderId !== previousFolderId) {
         rewriteBacklinksAfterNoteUpdate({
@@ -537,6 +569,10 @@ export function createNotesNotesStorage(): NotesStorage {
       // устареть после eviction.
       assertEntityFileWritable(path.join(paths.notesRoot, note.filePath), note)
 
+      const snapshot = {
+        properties: { ...note.properties },
+        updatedAt: note.updatedAt,
+      }
       const hasAnyField = applyNotePropertiesUpdate(note, input)
 
       if (!hasAnyField) {
@@ -544,7 +580,7 @@ export function createNotesNotesStorage(): NotesStorage {
       }
 
       note.updatedAt = Date.now()
-      writeNoteToFile(paths, note)
+      persistOrRestore(note, snapshot, () => writeNoteToFile(paths, note))
       scheduleDockBadgeRefresh()
 
       return { invalidInput: false, notFound: false }

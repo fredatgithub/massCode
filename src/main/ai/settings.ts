@@ -1,4 +1,8 @@
 import type { AiConfigure, AiProvider, AiSettings } from '../../shared/ai'
+import type {
+  AiSemanticConfigure,
+  AiSemanticSource,
+} from '../../shared/aiSemantic'
 import { Buffer } from 'node:buffer'
 import process from 'node:process'
 import { safeStorage } from 'electron'
@@ -10,6 +14,7 @@ import {
 } from '../../shared/ai'
 import { isSafeStorageUsable } from '../store/module/httpSecretsAvailability'
 import { AiError } from './errors'
+import { isBuiltinSupported } from './semantic/builtinModel'
 
 interface SavedProfile {
   baseURL: string
@@ -20,6 +25,8 @@ interface SavedProfile {
 interface SavedSettings {
   userInstructions: string
   provider: AiProvider
+  // 'provider' остался в настройках dev-сборок, где можно было подключить свой сервер эмбеддингов.
+  semanticSource: AiSemanticSource | 'provider'
   profiles: Record<AiProvider, SavedProfile>
 }
 const settings = new Store<SavedSettings>({
@@ -28,6 +35,7 @@ const settings = new Store<SavedSettings>({
   defaults: {
     provider: 'openai',
     userInstructions: '',
+    semanticSource: 'off',
     profiles: Object.fromEntries(
       AI_PROVIDERS.map(provider => [
         provider,
@@ -185,4 +193,17 @@ export function rememberAiModels(
     ...profiles,
     [connection.provider]: { ...profile, models },
   })
+}
+
+export function getAiSemanticSettings(): { source: AiSemanticSource } {
+  // Настройки, перенесённые с Mac на Apple silicon, сохраняют выбор, который Intel Mac не может выполнить.
+  const source
+    = settings.get('semanticSource') === 'builtin' && isBuiltinSupported()
+      ? 'builtin'
+      : 'off'
+  return { source }
+}
+
+export function configureAiSemantic(input: AiSemanticConfigure) {
+  settings.set('semanticSource', input.source)
 }

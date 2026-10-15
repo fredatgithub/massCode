@@ -53,7 +53,9 @@ import {
   deleteTagFromEntity,
   emptyEntityTrashFromStateAndDisk,
   getEntityDeleteCounts,
+  persistOrRestore,
 } from '../runtime/shared/entityStorage'
+import { buildRecordSignatures } from '../runtime/shared/recordSignature'
 import { querySearchIndex } from '../runtime/shared/searchEngine'
 
 function findContentIndexById(
@@ -117,27 +119,41 @@ export function createSnippetsStorage(): SnippetsStorage {
     },
     getSnippetsAsync: async (query) => {
       const search = query.search?.trim().toLowerCase()
-      if (!search || query.searchNameOnly) {
+      const fullText = Boolean(search && !query.searchNameOnly)
+      if (!fullText && !query.withContent) {
         return assembleSnippets(
           getRuntimeCache(getPaths(getVaultPath())),
           query,
           null,
         )
       }
+      // Подготовка полнотекстового поиска дочитывает тела с отдачей управления,
+      // поэтому withContent без поиска идёт тем же путём.
       while (true) {
         const prepared = await prepareSnippetSearchAsync(() =>
           getRuntimeCache(getPaths(getVaultPath())),
         )
         if (!prepared.isCurrent())
           continue
-        const ids = querySearchIndex(
-          prepared.items,
-          search,
-          prepared.index,
-          getSnippetSearchText,
-        )
+        const ids = fullText
+          ? querySearchIndex(
+              prepared.items,
+              search!,
+              prepared.index,
+              getSnippetSearchText,
+            )
+          : null
         return assembleSnippets(prepared.cache, query, ids)
       }
+    },
+    getSnippetSignatures: () => {
+      const { state, snippets } = getRuntimeCache(getPaths(getVaultPath()))
+      // findSnippetById, а не snippetById: карта пересобирается лениво и не видит только что созданные.
+      return buildRecordSignatures(
+        state.snippets,
+        id => findSnippetById(snippets, id),
+        state.folders,
+      )
     },
     getSnippetById: (id: number) => {
       const paths = getPaths(getVaultPath())
@@ -316,23 +332,29 @@ export function createSnippetsStorage(): SnippetsStorage {
       }
 
       const movedToTrash
-        = updateResult.previousIsDeleted !== 1 && snippet.isDeleted === 1
+        = updateResult.snapshot.isDeleted !== 1 && snippet.isDeleted === 1
       const previousDirectory = normalizeDirectoryPath(
         path.posix.dirname(previousPath),
       )
       const nextDirectory = getSnippetTargetDirectory(state, snippet)
       const movedBetweenDirectories = previousDirectory !== nextDirectory
 
+      // filePath persistSnippet откатывает сам вместе с файлом.
+      const snapshot = {
+        ...updateResult.snapshot,
+        updatedAt: snippet.updatedAt,
+      }
       snippet.updatedAt = Date.now()
-      persistSnippet(paths, state, snippet, previousPath, {
-        allowRenameOnConflict: movedToTrash || movedBetweenDirectories,
-        // assertEntityFileWritable выше уже проверил source до mutation.
-        sourceFileVerifiedLocal: true,
-        // Перенос в trash не требует перезаписи frontmatter (isDeleted
-        // выводится из trash-каталога), поэтому недокачанный файл не должен
-        // блокировать удаление.
-        skipWriteIfUnavailable: movedToTrash,
-      })
+      persistOrRestore(snippet, snapshot, () =>
+        persistSnippet(paths, state, snippet, previousPath, {
+          allowRenameOnConflict: movedToTrash || movedBetweenDirectories,
+          // assertEntityFileWritable выше уже проверил source до mutation.
+          sourceFileVerifiedLocal: true,
+          // Перенос в trash не требует перезаписи frontmatter (isDeleted
+          // выводится из trash-каталога), поэтому недокачанный файл не должен
+          // блокировать удаление.
+          skipWriteIfUnavailable: movedToTrash,
+        }))
       saveState(paths, state)
       scheduleDockBadgeRefresh()
 
@@ -427,7 +449,12 @@ export function createSnippetsStorage(): SnippetsStorage {
         throwCloudContentUnavailable()
       }
 
-      const content = snippet.contents[contentIndex]
+      const snapshot = {
+        contents: [...snippet.contents],
+        updatedAt: snippet.updatedAt,
+      }
+      // Фрагмент заменяется копией, чтобы snapshot сохранил прежний объект.
+      const content = { ...snippet.contents[contentIndex] }
 
       if ('label' in input) {
         content.label = input.label || content.label
@@ -441,8 +468,10 @@ export function createSnippetsStorage(): SnippetsStorage {
         content.language = input.language || content.language
       }
 
+      snippet.contents[contentIndex] = content
       snippet.updatedAt = Date.now()
-      writeSnippetToFile(paths, snippet)
+      persistOrRestore(snippet, snapshot, () =>
+        writeSnippetToFile(paths, snippet))
       saveState(paths, state, { searchIndexUpdate: snippet })
 
       return {
@@ -579,9 +608,14 @@ export function createSnippetsStorage(): SnippetsStorage {
         throwCloudContentUnavailable()
       }
 
+      const snapshot = {
+        contents: [...snippet.contents],
+        updatedAt: snippet.updatedAt,
+      }
       snippet.contents.splice(contentIndex, 1)
       snippet.updatedAt = Date.now()
-      writeSnippetToFile(paths, snippet)
+      persistOrRestore(snippet, snapshot, () =>
+        writeSnippetToFile(paths, snippet))
       saveState(paths, state)
 
       return { deleted: true }

@@ -16,6 +16,7 @@ import {
   assertEntityFileWritable,
   throwCloudContentUnavailable,
 } from '../../runtime/shared/cloudGuards'
+import { persistOrRestore } from '../../runtime/shared/entityStorage'
 import { collectDescendantIds } from '../../runtime/shared/folderIndex'
 import {
   applyFolderParentAndOrder,
@@ -25,6 +26,7 @@ import {
   getFolderPathsByDepth,
   getFoldersSortedByCreatedAt,
   getFoldersTreeSorted,
+  listUnmanagedFolderFiles,
   moveFolderDirectoryOnDisk,
   removeFolderPathsFromDisk,
   replaceSubtreePathPrefix,
@@ -95,6 +97,31 @@ export function createNotesFoldersStorage(): NotesFoldersStorage {
     getFoldersTree() {
       const { state } = getCache()
       return getFoldersTreeSorted(state.folders)
+    },
+
+    getUnmanagedFiles(id: number) {
+      const paths = resolvePaths()
+
+      // До сверки список заметок provisional и пуст: файлы настоящих
+      // заметок выглядели бы посторонними.
+      if (!isNotesVaultDiskReady(paths)) {
+        throwStorageError(
+          'VAULT_HYDRATING',
+          'Vault is still syncing, folder contents are not known yet',
+        )
+      }
+
+      const { state, notes } = getNotesRuntimeCache(paths)
+      const folderPath = buildNotesFolderPathMap(state).get(id)
+      if (!folderPath) {
+        return []
+      }
+
+      return listUnmanagedFolderFiles(
+        paths.notesRoot,
+        folderPath,
+        new Set(notes.map(note => note.filePath)),
+      )
     },
 
     createFolder(input: NoteFolderCreateInput) {
@@ -377,14 +404,22 @@ export function createNotesFoldersStorage(): NotesFoldersStorage {
       for (const note of notes) {
         if (note.folderId !== null && descendantIds.has(note.folderId)) {
           const previousFilePath = note.filePath
+          // name входит в snapshot: allowRenameOnConflict может его сменить.
+          const snapshot = {
+            folderId: note.folderId,
+            isDeleted: note.isDeleted,
+            name: note.name,
+            updatedAt: note.updatedAt,
+          }
           note.folderId = null
           note.isDeleted = 1
           note.updatedAt = Date.now()
-          persistNote(paths, state, note, previousFilePath, {
-            allowRenameOnConflict: true,
-            directoryEntriesCache,
-            folderPathMap,
-          })
+          persistOrRestore(note, snapshot, () =>
+            persistNote(paths, state, note, previousFilePath, {
+              allowRenameOnConflict: true,
+              directoryEntriesCache,
+              folderPathMap,
+            }))
         }
       }
 

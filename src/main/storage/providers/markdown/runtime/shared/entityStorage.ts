@@ -117,8 +117,15 @@ export function applyEntityUpdateFields<
 ): {
     hasAnyField: boolean
     pathMayChange: boolean
-    previousIsDeleted: number
+    snapshot: Pick<TEntity, UpdatableEntityField>
   } {
+  const snapshot = {
+    description: input.entity.description,
+    folderId: input.entity.folderId,
+    isDeleted: input.entity.isDeleted,
+    isFavorites: input.entity.isFavorites,
+    name: input.entity.name,
+  } as Pick<TEntity, UpdatableEntityField>
   const hasAnyField = (
     ['name', 'description', 'folderId', 'isFavorites', 'isDeleted'] as const
   ).some(field => hasInputField(input, field))
@@ -127,13 +134,24 @@ export function applyEntityUpdateFields<
     return {
       hasAnyField: false,
       pathMayChange: false,
-      previousIsDeleted: input.entity.isDeleted,
+      snapshot,
     }
   }
 
   assertEntityContentAvailable(input.entity)
 
-  const previousIsDeleted = input.entity.isDeleted
+  // Папка проверяется до мутаций: иначе name уже изменился бы в runtime, а
+  // обновление отклонилось.
+  const hasFolderField = hasInputField(input, 'folderId')
+  const nextFolderId = input.input.folderId ?? null
+  if (
+    hasFolderField
+    && nextFolderId !== null
+    && !input.folderExists(nextFolderId)
+  ) {
+    input.onMissingFolder(nextFolderId)
+  }
+
   let pathMayChange = false
 
   if (hasInputField(input, 'name')) {
@@ -145,12 +163,7 @@ export function applyEntityUpdateFields<
     input.entity.description = input.input.description ?? null
   }
 
-  if (hasInputField(input, 'folderId')) {
-    const nextFolderId = input.input.folderId ?? null
-    if (nextFolderId !== null && !input.folderExists(nextFolderId)) {
-      input.onMissingFolder(nextFolderId)
-    }
-
+  if (hasFolderField) {
     input.entity.folderId = nextFolderId
     pathMayChange = true
   }
@@ -173,7 +186,7 @@ export function applyEntityUpdateFields<
   return {
     hasAnyField: true,
     pathMayChange,
-    previousIsDeleted,
+    snapshot,
   }
 }
 
@@ -286,6 +299,23 @@ export function emptyEntityTrashFromStateAndDisk<
   return { deletedCount: deletedEntities.length }
 }
 
+// Сбой записи после мутации оставил бы в runtime-кэше несохранённую правку,
+// которую GET и UI показывали бы как сохранённую до рескана. snapshot должен
+// содержать прежние значения всех полей, изменённых до записи.
+export function persistOrRestore<TEntity extends object>(
+  entity: TEntity,
+  snapshot: Partial<TEntity>,
+  persist: () => void,
+): void {
+  try {
+    persist()
+  }
+  catch (error) {
+    Object.assign(entity, snapshot)
+    throw error
+  }
+}
+
 interface EntityWithTags {
   pendingCloudDownload?: boolean
   tags: number[]
@@ -312,9 +342,12 @@ export function addTagToEntity<TEntity extends EntityWithTags>(
 
   if (!input.entity.tags.includes(input.tagId)) {
     assertEntityContentAvailable(input.entity)
-    input.entity.tags.push(input.tagId)
-    input.entity.updatedAt = Date.now()
-    input.onUpdated(input.entity)
+    const entity = input.entity
+    const snapshot = { tags: [...entity.tags], updatedAt: entity.updatedAt }
+    entity.tags.push(input.tagId)
+    entity.updatedAt = Date.now()
+    persistOrRestore(entity, snapshot as Partial<TEntity>, () =>
+      input.onUpdated(entity))
 
     return {
       entityFound: true,
@@ -366,9 +399,12 @@ export function deleteTagFromEntity<TEntity extends EntityWithTags>(
   }
 
   assertEntityContentAvailable(input.entity)
-  input.entity.tags.splice(tagIndex, 1)
-  input.entity.updatedAt = Date.now()
-  input.onUpdated(input.entity)
+  const entity = input.entity
+  const snapshot = { tags: [...entity.tags], updatedAt: entity.updatedAt }
+  entity.tags.splice(tagIndex, 1)
+  entity.updatedAt = Date.now()
+  persistOrRestore(entity, snapshot as Partial<TEntity>, () =>
+    input.onUpdated(entity))
 
   return {
     entityFound: true,

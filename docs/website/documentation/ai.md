@@ -7,7 +7,7 @@ description: "Ask the AI assistant to edit code, organize notes, run HTTP workfl
 
 Use your own AI provider or a local model to edit snippets, organize notes and work with HTTP requests. Edits apply directly unless you ask for a preview.
 
-<img :src="withBase('/http-ai.png')" alt="AI assistant reviewing an HTTP product request and suggesting additional response checks">
+<img class="screenshot" :src="withBase('/http-ai.png')" alt="AI assistant reviewing an HTTP product request and suggesting additional response checks">
 
 ## Connect a Provider
 
@@ -69,6 +69,8 @@ Workspace selection is captured when you send each message. Use it for requests 
 
 Attachments are optional and do not restrict vault search. Ask the assistant to find records across Code, Notes and HTTP, then click a record link in the answer or **Found records** to open it.
 
+The assistant uses the same search as the Command Palette: it matches words in record names and text, including HTTP methods, paths and descriptions. With [semantic search](/documentation/search#search-by-meaning) turned on, it also finds records related by meaning, for example a note about invoices when you ask about billing. Records whose name matches the query exactly rank first.
+
 ## Apply, Preview and Undo Changes
 
 The assistant can create and edit records, duplicate them, change tags and folders, move records to Trash and restore them. It can also update Code fragments and Notes [task properties](/documentation/notes/tasks), such as status, due date and priority.
@@ -77,11 +79,11 @@ Ordinary edit requests apply directly. To review first, say “Show me the chang
 
 For example, ask the assistant to improve a retry helper and propose the changes for review:
 
-<img :src="withBase('/snippets-ai-2.png')" alt="AI assistant proposing improvements to a Python retry snippet with a Review changes button">
+<img class="screenshot" :src="withBase('/snippets-ai-2.png')" alt="AI assistant proposing improvements to a Python retry snippet with a Review changes button">
 
 Open **Review changes** to compare **Before** and **After**, then choose **Apply changes** or **Reject changes**.
 
-<img :src="withBase('/snippets-ai-3.png')" alt="Review changes dialog comparing the original retry snippet with the proposed improvements">
+<img class="screenshot" :src="withBase('/snippets-ai-3.png')" alt="Review changes dialog comparing the original retry snippet with the proposed improvements">
 
 If the source changed since the preview was prepared, ask for a fresh preview. Code or Markdown shown only in an answer does not change your records.
 
@@ -145,6 +147,8 @@ Long conversations may exceed the request size limit. Older complete exchanges a
 The configured provider receives your messages, included history, custom instructions, attachments and records the assistant reads. HTTP data masks recognized credentials and known secret values, but arbitrary sensitive text in code, notes or response bodies may still be shared. Cookie values and protected environment values are not returned to the model. Selecting an upload file does not include its path or bytes in the model’s result.
 
 API keys are stored with operating-system encryption outside your vault and are not included in vault sync. If secure storage is unavailable, you can still use a connection that does not require a key.
+
+[Semantic search](/documentation/search#search-by-meaning) runs locally with the built-in model and does not send records or queries anywhere.
 
 For local processing, use a model running on your computer. A local server address alone does not guarantee this: Ollama can also serve cloud-backed models. massCode does not automatically switch to a cloud provider when a local server is unavailable.
 
