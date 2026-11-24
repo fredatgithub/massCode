@@ -68,6 +68,62 @@ describe('arithmetic', () => {
   })
 })
 
+describe('localized math input', () => {
+  it.each(['en-US', 'es-ES'])(
+    'evaluates decimal commas and percent of with %s formatting',
+    (locale) => {
+      setFormatSettings(locale, 6, 'numeric')
+
+      const results = evalLines(
+        ['2,50 + 1,25', '1500,75 * 2', '1.234,56 + 1', '10 % de 200'].join(
+          '\n',
+        ),
+      )
+
+      expect(results.map(result => result.numericValue)).toEqual([
+        3.75,
+        3001.5,
+        1235.56,
+        20,
+      ])
+      expect(results[0].value).toBe(locale === 'en-US' ? '3.75' : '3,75')
+    },
+  )
+
+  it('uses the configured locale when a comma could group three digits', () => {
+    expect(evalLine('1,234 + 1').value).toBeNull()
+    expectValue('0,125 + 1', '1.125')
+
+    setFormatSettings('es-ES', 6, 'numeric')
+    expectValue('1,234 + 1', '2,234')
+  })
+
+  it('preserves argument and array separators in mixed expressions', () => {
+    expectValue('max(2,3) + (1,25 * 2)', '5.5')
+    expectValue('max([2,3]) + 1,25', '4.25')
+
+    setFormatSettings('es-ES', 6, 'numeric')
+    expectValue('max(2,3) + (1,25 * 2)', '5,5')
+    expectValue('max([2,3]) + 1,25', '4,25')
+    expectValue('max(2,3.5)', '3,5')
+    expectValue('max([2,3.5])', '3,5')
+    expectValue('pow(2,3)', '8')
+    expectValue('log(8,2)', '3')
+  })
+
+  it('preserves decimal commas inside function arguments in comma-decimal locales', () => {
+    setFormatSettings('es-ES', 6, 'numeric')
+    expectValue('log(0,5,2)', '-1')
+    expectValue('sqrt(2,25)', '1,5')
+    expectValue('max((1,25), 1)', '1,25')
+  })
+
+  it('accepts a grouped decimal copied from an en-US result', () => {
+    expectValue('3,001.5 + 1', '3,002.5')
+    expectValue('max(2,345.6)', '345.6')
+  })
+})
+
 describe('locale-aware full slash dates', () => {
   it('uses mdy parsing for en-US', () => {
     setFormatSettings('en-US', 6, 'numeric')
@@ -232,10 +288,9 @@ describe('math functions', () => {
   it('sin(45 deg)', () => expectNumericClose('sin(45 deg)', 0.7071))
   it('sin 45°', () => expectNumericClose('sin 45°', 0.7071))
   it('cos(pi)', () => expectNumericClose('cos(pi)', -1))
-  it('log(100)', () => {
-    const result = evalLine('log(100)')
-    expect(result.error).toBeNull()
-    expect(result.value).not.toBeNull()
+  it('uses the natural logarithm unless a base is specified', () => {
+    expectValue('log(100)', '4.60517')
+    expectValue('log(100, 10)', '2')
   })
   it('ln(e)', () => expectNumericClose('ln(e)', 1))
   it('round(1 month in days)', () =>
@@ -247,6 +302,13 @@ describe('percentage basic', () => {
   it('X + Y%', () => expectNumericClose('100 + 15%', 115))
   it('X - Y%', () => expectNumericClose('200 - 10%', 180))
   it('Y% of X', () => expectNumericClose('15% of 200', 30))
+  it('allows a space before the percent sign', () =>
+    expectValue('15 % of 200', '30'))
+  it('keeps modulo with the percent operator', () => expectValue('5 % 2', '1'))
+  it.each(['200 + 10%3', '200 + 10% 3', '200 + 10 % 3', '200 + 10%(3)'])(
+    'does not rewrite modulo as a percentage increase in %s',
+    expression => expectValue(expression, '201'),
+  )
 })
 
 describe('percentage advanced', () => {

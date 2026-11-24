@@ -1,5 +1,25 @@
 import type { RewriteRule } from '../types'
-import { knownUnitTokens, TIME_UNIT_TOKEN_MAP } from '../constants'
+import {
+  knownUnitTokens,
+  MATH_UNARY_FUNCTIONS,
+  TIME_UNIT_TOKEN_MAP,
+} from '../constants'
+
+const decimalCommaTokens = new RegExp(
+  [
+    String.raw`"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'`,
+    String.raw`(?<![\p{L}\p{N}_$])[\p{L}_$][\p{L}\p{N}_$]*\s*\(|[[\]{}()]`,
+    String.raw`(?<![\w.])\d{1,3}(?:,\d{3})+\.\d+(?![\d.])`,
+    String.raw`(?<![\w.])(\d{1,3}(?:\.\d{3})+|\d+),(\d+)(?=\b|[a-z%])`,
+  ].join('|'),
+  'giu',
+)
+
+const singleArgumentFunctions = new Set<string>(
+  MATH_UNARY_FUNCTIONS.filter(
+    name => !['round', 'ceil', 'floor'].includes(name),
+  ),
+)
 
 function getDecimalSeparator(locale: string): string {
   return (
@@ -32,17 +52,63 @@ export const decimalCommaNumbers: RewriteRule = {
   category: 'normalize',
   priority: 110,
   apply: (ctx) => {
-    if (getDecimalSeparator(ctx.locale) !== ',') {
+    if (!/\d,\d/.test(ctx.line)) {
       return null
     }
 
-    const line = ctx.line
-      .replace(
-        /\b(\d{1,3}(?:\.\d{3})+),(\d+)(?=\b|[a-z%])/gi,
-        (_, integer: string, fraction: string) =>
-          `${integer.replace(/\./g, '')}.${fraction}`,
-      )
-      .replace(/(?<![\w.])(\d+),(\d+)(?=\b|[a-z%])/gi, '$1.$2')
+    const preferDecimalComma = getDecimalSeparator(ctx.locale) === ','
+    // A comma can delimit arguments or array elements inside these containers.
+    const containers: (string | null)[] = []
+    const line = ctx.line.replace(
+      decimalCommaTokens,
+      (
+        token,
+        integer: string | undefined,
+        fraction: string | undefined,
+        offset: number,
+      ) => {
+        if (token.endsWith('(') || token === '[' || token === '{') {
+          const followsIndex
+            = token === '(' && /\]\s*$/.test(ctx.line.slice(0, offset))
+          containers.push(
+            token === '(' && !followsIndex
+              ? null
+              : token.slice(0, -1).trim().toLowerCase(),
+          )
+        }
+        else if (token === ')' || token === ']' || token === '}') {
+          containers.pop()
+        }
+        else if (token.includes(',') && /^\d/.test(token)) {
+          const container = containers.at(-1)
+          if (!integer || !fraction) {
+            return !preferDecimalComma && container == null
+              ? token.replace(/,/g, '')
+              : token
+          }
+
+          const rest = ctx.line.slice(offset + token.length)
+          const adjacentPunctuation
+            = ctx.line[offset - 1] === ',' || /^[.,]/.test(rest)
+          const couldBeGroupedInteger
+            = fraction.length === 3 && /^[1-9]\d{0,2}$/.test(integer)
+          const decimalInFunction
+            = preferDecimalComma
+              && ((!adjacentPunctuation
+                && singleArgumentFunctions.has(container ?? ''))
+              // log takes at most two arguments. Keep the decimal comma in log(0,5,2).
+              || (container === 'log' && /^,\s*\d+(?:\.\d+)?\s*\)/.test(rest)))
+          const decimalInExpression
+            = container == null
+              && !adjacentPunctuation
+              && (preferDecimalComma || !couldBeGroupedInteger)
+          if (decimalInExpression || decimalInFunction) {
+            return `${integer.replace(/\./g, '')}.${fraction}`
+          }
+        }
+        return token
+      },
+    )
 
     if (line === ctx.line)
       return null

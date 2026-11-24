@@ -1,5 +1,6 @@
 import type { DateFormat } from '../../../shared/dateFormat'
 import type { HttpRequestPreviewFormat } from '../../../shared/httpPreview'
+import type { CommunityThemesStoreState } from './theme'
 
 export type SpaceLayoutMode = 'all-panels' | 'list-editor' | 'editor-only'
 export type NotesEditorMode = 'raw' | 'livePreview' | 'preview'
@@ -181,6 +182,7 @@ export interface AppStore {
   math: {
     contentSort: ContentSortState
   }
+  communityThemes: CommunityThemesStoreState
   notifications: {
     lastNotifiedUpdateVersion: string
     lastWhatsNewVersion: string
@@ -270,6 +272,8 @@ export interface PreferencesStore {
   aiPromptHistoryLimit: number
   appearance: {
     theme: string
+    lightTheme: string
+    darkTheme: string
     dockBadgeSource: DockBadgeSource
     dateFormat: DateFormat
   }
@@ -314,6 +318,17 @@ export interface MathNotebookStore {
   sheets: MathSheet[]
   activeSheetId: string | null
 }
+
+export type MathNotebookChange =
+  | { type: 'create', sheet: MathSheet }
+  | {
+    type: 'edit'
+    id: string
+    fields: Partial<Pick<MathSheet, 'content' | 'name'>> &
+      Pick<MathSheet, 'updatedAt'>
+  }
+  | { type: 'delete', id: string }
+  | { type: 'select', id: string | null }
 
 export interface CurrencyRatesCache {
   rates: Record<string, number>

@@ -10,7 +10,7 @@ A free, open-source developer workspace.
 <p align="center">
   <strong>Snippets, notes, HTTP requests, calculations, drawings, and dev tools in one local-first app.</strong>
   <br>
-  Your workspace is stored locally as plain Markdown files.
+  Stored locally as plain Markdown files. Connect your coding agent via MCP to find snippets, read linked notes, and run saved HTTP requests.
 </p>
 
 <p align="center">
@@ -23,7 +23,9 @@ A free, open-source developer workspace.
 <p align="center">
   <a href="https://github.com/massCodeIO/massCode/releases">Download</a> &nbsp;|&nbsp;
   <a href="https://masscode.io/documentation/">Documentation</a> &nbsp;|&nbsp;
-  <a href="https://github.com/massCodeIO/massCode/blob/master/CHANGELOG.md">Changelog</a>
+  <a href="https://masscode.io/documentation/mcp/">MCP Setup</a> &nbsp;|&nbsp;
+  <a href="https://github.com/massCodeIO/massCode/blob/master/CHANGELOG.md">Changelog</a> &nbsp;|&nbsp;
+  <a href="https://www.reddit.com/r/massCode/">Community</a>
 </p>
 
 <p align="center">
@@ -55,7 +57,6 @@ massCode is free and open source. But building and maintaining a quality tool ta
 [![Open Collective](https://img.shields.io/badge/donate-Open%20Collective-blue.svg?style=popout&logo=opencollective)](https://opencollective.com/masscode)
 [![PayPal](https://img.shields.io/badge/donate-PayPal-blue.svg?style=popout&logo=paypal)](https://paypal.me/antongithub)
 [![Gumroad](https://img.shields.io/badge/donate-Gumroad-blue?style=popout&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzQiIGhlaWdodD0iMzMiIHZpZXdCb3g9IjAgMCAzNCAzMyIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGVsbGlwc2UgY3g9IjE5LjgyODciIGN5PSIxOS4xMzU5IiByeD0iMTQuMTcxNCIgcnk9IjEzLjY3NjUiIGZpbGw9ImJsYWNrIi8+CjxwYXRoIGQ9Ik0xNi4xNzE0IDI5Ljk0NjRDMjQuNDAzMiAyOS45NDY0IDMxLjEyNDEgMjMuNDk5NSAzMS4xMjQxIDE1LjQ4ODdDMzEuMTI0MSA3LjQ3OCAyNC40MDMyIDEuMDMxMDEgMTYuMTcxNCAxLjAzMTAxQzcuOTM5NyAxLjAzMTAxIDEuMjE4NzUgNy40NzggMS4yMTg3NSAxNS40ODg3QzEuMjE4NzUgMjMuNDk5NSA3LjkzOTcgMjkuOTQ2NCAxNi4xNzE0IDI5Ljk0NjRaIiBmaWxsPSIjRkY5MEU4IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuNTYyNSIvPgo8cGF0aCBkPSJNMTUuMDQ2NyAyMi43ODI3QzEwLjg2MiAyMi43ODI3IDguNDAwMzkgMTkuNDAyNCA4LjQwMDM5IDE1LjE5NzZDOC40MDAzOSAxMC44Mjc5IDExLjEwODEgNy4yODI3MSAxNi4yNzc0IDcuMjgyNzFDMjEuNjEwOSA3LjI4MjcxIDIzLjQxNiAxMC45MTA0IDIzLjQ5ODEgMTIuOTcxNUgxOS42NDE2QzE5LjU1OTYgMTEuODE3MyAxOC41NzQ5IDEwLjA4NTkgMTYuMTk1NCAxMC4wODU5QzEzLjY1MTggMTAuMDg1OSAxMi4wMTA3IDEyLjMxMiAxMi4wMTA3IDE1LjAzMjdDMTIuMDEwNyAxNy43NTM1IDEzLjY1MTggMTkuOTc5NSAxNi4xOTU0IDE5Ljk3OTVDMTguNDkyOSAxOS45Nzk1IDE5LjQ3NzUgMTguMTY1NyAxOS44ODc4IDE2LjM1MTlIMTYuMTk1NFYxNC44Njc4SDIzLjk0MzJWMjIuNDUyOUgyMC41NDQyVjE3LjY3MUMyMC4yOTggMTkuNDAyNCAxOS4yMzEzIDIyLjc4MjcgMTUuMDQ2NyAyMi43ODI3WiIgZmlsbD0iYmxhY2siLz4KPC9zdmc+Cg==)](https://antonreshetov.gumroad.com/l/masscode)
-[![Polar](https://img.shields.io/badge/donate-Polar-blue?style=popout&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgdmlld0JveD0iMCAwIDMwMCAzMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF8xXzEwKSI+CjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgY2xpcC1ydWxlPSJldmVub2RkIiBkPSJNNjYuNDI4NCAyNzQuMjZDMTM0Ljg3NiAzMjAuNTkzIDIyNy45MjUgMzAyLjY2NiAyNzQuMjU4IDIzNC4yMTlDMzIwLjU5MyAxNjUuNzcxIDMwMi42NjYgNzIuNzIyMiAyMzQuMjE4IDI2LjM4ODVDMTY1Ljc3IC0xOS45NDUxIDcyLjcyMSAtMi4wMTgxIDI2LjM4NzIgNjYuNDI5N0MtMTkuOTQ2NSAxMzQuODc3IC0yLjAxOTM5IDIyNy45MjcgNjYuNDI4NCAyNzQuMjZaTTQ3Ljk1NTUgMTE2LjY3QzMwLjgzNzQgMTY5LjI2MyAzNi41NDQ1IDIyMS44OTMgNTkuMjQ1NCAyNTYuMzczQzE4LjA0MTIgMjE3LjM2MSA3LjI3NTYyIDE1MC4zMDcgMzYuOTQzNiA5Mi4zMThDNTUuOTE1MSA1NS4yMzYyIDg3LjU2NjQgMjkuMzkzNyAxMjIuNSAxOC4zNDgzQzkwLjU5MTEgMzYuNzEwNSA2Mi41NTQ5IDcxLjgxNDQgNDcuOTU1NSAxMTYuNjdaTTE3NS4zNDcgMjgzLjEzN0MyMTEuMzc3IDI3Mi42MDYgMjQ0LjIxMSAyNDYuMzg1IDI2My42ODUgMjA4LjMyMkMyOTMuMTAxIDE1MC44MjUgMjgyLjc2OCA4NC40MTcyIDI0Mi40MjcgNDUuMjY3M0MyNjQuMjIgNzkuNzYyNiAyNjkuNDczIDEzMS41NDIgMjUyLjYzMSAxODMuMjg3QzIzNy42MTUgMjI5LjQyMSAyMDguMzg1IDI2NS4yMzkgMTc1LjM0NyAyODMuMTM3Wk0xODMuNjI3IDI2Ni4yMjlDMjA3Ljk0NSAyNDUuNDE4IDIyOC4wMTYgMjEwLjYwNCAyMzYuOTM1IDE2OC43OUMyNTEuMDMzIDEwMi42OTMgMjMyLjU1MSA0MS4xOTc4IDE5NS4xMTIgMjAuNjc2OEMyMTQuOTcgNDcuMzk0NSAyMjUuMDIyIDk5LjI5MDIgMjE4LjgyNCAxNTcuMzMzQzIxNC4wODUgMjAxLjcyNCAyMDAuODE0IDI0MC41OTMgMTgzLjYyNyAyNjYuMjI5Wk02My43MTc3IDEzMS44NDRDNDkuNTE1NSAxOTguNDMgNjguMzc3IDI2MC4zNDUgMTA2LjM3NCAyODAuNDA1Qzg1Ljk5NjIgMjU0LjAwOSA3NS41OTY4IDIwMS41MTQgODEuODc1OCAxNDIuNzExQzg2LjUzNzQgOTkuMDUzNiA5OS40NTAzIDYwLjczNyAxMTYuMjI1IDM1LjA5NjlDOTIuMjY3NyA1NS45ODMgNzIuNTM4NCA5MC40ODkyIDYzLjcxNzcgMTMxLjg0NFpNMTk5LjgzNCAxNDkuNTYxQzIwMC45MDggMjE3LjQ3MyAxNzkuNTkgMjcyLjg3OCAxNTIuMjIyIDI3My4zMDlDMTI0Ljg1MyAyNzMuNzQyIDEwMS43OTcgMjE5LjAzOSAxMDAuNzI0IDE1MS4xMjdDOTkuNjUxMSA4My4yMTM4IDEyMC45NjggMjcuODA5NCAxNDguMzM3IDI3LjM3N0MxNzUuNzA1IDI2Ljk0NDYgMTk4Ljc2MiA4MS42NDggMTk5LjgzNCAxNDkuNTYxWiIgZmlsbD0id2hpdGUiLz4KPC9nPgo8ZGVmcz4KPGNsaXBQYXRoIGlkPSJjbGlwMF8xXzEwIj4KPHJlY3Qgd2lkdGg9IjMwMCIgaGVpZ2h0PSIzMDAiIGZpbGw9IndoaXRlIi8+CjwvY2xpcFBhdGg+CjwvZGVmcz4KPC9zdmc+Cg==)](https://buy.polar.sh/polar_cl_bpDmjg079kfiAVtdtrtBwxyRXN6NK8B4Bvqdk2QXdx7)
 
 </div>
 
@@ -64,6 +65,9 @@ massCode is free and open source. But building and maintaining a quality tool ta
 </p>
 
 <p align="center">
+  <a href="https://torsher.app/?ref=github/massCodeIO">
+    <img src='.github/assets/Torsher.svg' alt='Torsher — self-hosted media center for the TV'>
+  </a>
   <a href="https://mysigmail.com/?ref=github/massCodeIO">
     <img src='.github/assets/MySigMail.svg'>
   </a>
@@ -72,6 +76,17 @@ massCode is free and open source. But building and maintaining a quality tool ta
 ## About
 
 Originally a snippet manager, massCode now brings together snippets, notes, HTTP requests, calculations, drawings, and developer tools in one desktop app, so everyday work stays in one place.
+
+## Local-First Workspace for AI Agents (MCP)
+
+Connect **Claude Code**, **Cursor**, **Codex**, or **VS Code Copilot** directly to your local massCode vault through the built-in MCP server. Your coding agent gets shared local context across every repository without moving your workspace to a cloud service:
+
+- **Shared local memory across repos** — search and read snippets, Markdown notes, and their `[[wiki-links]]` directly from your agent session.
+- **Live API toolbox** — create, preview, and run saved HTTP requests with your active environment and execution history, while secret values and cookies stay stored separately from the synced vault.
+- **Capture & organize safely** — save solutions back into folders with tags, protect updates with revision checks, and rely on Trash instead of permanent deletion.
+- **100% local-first** — the MCP server listens only on `127.0.0.1`, while snippets, notes, and saved requests stay plain `.md` files on disk (Git / iCloud / Syncthing friendly).
+
+See the [MCP Quickstart](https://masscode.io/documentation/mcp/) · [MCP Workflows](https://masscode.io/documentation/mcp/workflows.html) · [MCP Reference](https://masscode.io/documentation/mcp/reference.html).
 
 ## Features
 
@@ -184,18 +199,6 @@ Ask the built-in assistant to carry out tasks across Code, Notes, and HTTP using
 
 Cloud providers receive the context used for the task; use a model running on your computer for local processing. See the [AI Assistant guide](https://masscode.io/documentation/ai/) for setup and examples.
 
-### MCP Integration
-
-Connect Claude Code, Codex, Cursor, or VS Code Copilot to your massCode vault through the built-in MCP server.
-
-- Find and read snippets, notes, and saved HTTP requests from your coding agent
-- Save snippets and notes to folders with tags, and update them with protection against overwriting newer changes
-- Organize folders, move items, and send them to Trash or restore them when you allow changes to existing items
-- Organize and edit HTTP requests in collections
-- Preview and send requests using the active massCode environment, then inspect saved execution history
-
-See the [MCP setup guide](https://masscode.io/documentation/mcp/) to connect your agent.
-
 ## Markdown Vault
 
 Your snippets, notes, and HTTP requests live as plain `.md` files on disk with frontmatter metadata, so the data stays readable and portable.
@@ -207,7 +210,7 @@ Your snippets, notes, and HTTP requests live as plain `.md` files on disk with f
 
 ## Custom Themes
 
-Customize the app UI and editor syntax highlighting with JSON theme files. Supports light and dark themes with live reload. See the [theme docs](https://masscode.io/documentation/themes.html).
+Customize the app UI and editor syntax highlighting with JSON theme files, or browse and install themes in one click from the built-in [Community Themes Gallery](https://github.com/massCodeIO/masscode-themes). Supports light and dark themes with live reload and automatic OS light/dark theme pairing. See the [theme docs](https://masscode.io/documentation/themes.html).
 
 ## Contributions
 
@@ -261,6 +264,7 @@ pnpm dev
 
 - News and updates on [X](https://x.com/anton_reshetov)
 - [Discussions](https://github.com/massCodeIO/massCode/discussions)
+- [Reddit · r/massCode](https://www.reddit.com/r/massCode/)
 
 ![](.github/assets/subscribe.gif)
 
